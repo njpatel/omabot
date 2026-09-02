@@ -11,7 +11,7 @@
  ▀█████▀    ▀█   ███   █▀   ███   █▀    ▀███████▀   ▀█████▀       ███
 -->
 
-Your [Grok Bot](https://x.ai/bot) roster in the [Omarchy](https://omarchy.org) bar. Every bot is drawn as itself - the shape and colour it has in the app - wearing the face of whatever it wants from you.
+Your [Grok Bot](https://x.ai/bot) roster in the [Omarchy](https://omarchy.org) bar. Every bot is drawn as itself - the shape and colour it has in the app, or the picture you gave it - wearing the face of whatever it wants from you.
 
 ![The roster, whoever needs you first](assets/omabot.png)
 
@@ -24,7 +24,7 @@ omarchy restart shell
 
 Nothing to configure. Omabot reads the state Grok Bot already keeps on disk, so it needs the desktop app and `python3` and nothing else. It never touches the network, and it only ever reads - Grok Bot is left alone.
 
-Remove with `omarchy plugin remove njpatel.omabot`. It leaves nothing behind.
+Remove with `omarchy plugin remove njpatel.omabot`. It leaves behind only `~/.local/state/omarchy/omabot/`, where it keeps a copy of any avatar picture it has had to decode - delete it if you like.
 
 ## In the bar
 
@@ -59,7 +59,7 @@ The avatars greet you when the panel opens, and their eyes follow the pointer wh
 
 ## Faces
 
-There is no expression in Grok Bot's data - the app stores a shape, a colour and a pair of eyes. The face is Omabot's reading of what a bot is doing:
+A bot that wears a picture is drawn with it, masked to the same squircle the app uses, and keeps its picture through every animation. The rest get a face: there is no expression in Grok Bot's data - the app stores a shape, a colour and a pair of eyes - so this is Omabot's reading of what a bot is doing:
 
 | | |
 |---|---|

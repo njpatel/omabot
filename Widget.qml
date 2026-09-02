@@ -486,6 +486,7 @@ Panel {
           width: root.barAvatarSize
           height: root.barAvatarSize
           shape: modelData.shape
+          image: modelData.avatar ? "file://" + modelData.avatar : ""
           fill: root.colorFor(modelData)
           eyeColor: root.eyeInk
           face: root.faceFor(modelData)
@@ -742,6 +743,8 @@ Panel {
                     width: Style.space(28)
                     height: Style.space(28)
                     shape: modelData.kind === "bot" ? modelData.bot.shape : "blob"
+                    image: modelData.kind === "bot" && modelData.bot.avatar
+                           ? "file://" + modelData.bot.avatar : ""
                     fill: modelData.kind === "bot" ? root.colorFor(modelData.bot) : root.dim
                     eyeColor: root.eyeInk
                     face: modelData.kind === "bot" ? root.faceFor(modelData.bot) : "neutral"

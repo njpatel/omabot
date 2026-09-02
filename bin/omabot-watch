@@ -2,6 +2,8 @@
 # omabot-watch - follows Grok Bot's local state and streams it as JSON lines.
 #
 #   stdout  {"generated_ts":…, "counts":{…}, "sections":[…], "bots":[…]}
+#   cache   ~/.local/state/omarchy/omabot/avatars/<version>.png for bots that
+#           wear a picture instead of a shape
 #   args    --interval N   seconds between checks (default 2)
 #
 # Grok Bot keeps its client state in ~/.config/Grok Bot/sand-client-persistence
@@ -18,6 +20,10 @@ import time
 STATE = os.path.expanduser("~/.config/Grok Bot")
 PERSIST = os.path.join(STATE, "sand-client-persistence")
 MARKER = os.path.join(STATE, "sand-session-marker.json")
+# Where decoded avatar images are kept. Grok Bot stores them as base64 data
+# URLs in one blob; QML wants files, and a 200KB string per bot has no business
+# going through a JSON line every couple of seconds.
+CACHE = os.path.expanduser("~/.local/state/omarchy/omabot/avatars")
 
 # Avatar palette, lifted from the app bundle so the widget matches it exactly.
 COLORS = {
@@ -104,6 +110,62 @@ def working_state(index, bot_id, now):
     return bool(since and now - since < 900), since
 
 
+# Bots with a picture instead of a shape: the roster gives them a null shape
+# and colour and an avatarVersion, and the picture itself lives in a separate
+# blob as a data URL. Decode each one once, to a file named for its version, so
+# a changed picture writes a new file and an unchanged one costs nothing.
+_avatars = (None, {})
+
+
+def avatars(index):
+    """bot id -> path of its decoded avatar image."""
+    global _avatars
+    entry = None
+    for key, (path, mtime) in index.items():
+        if key.endswith("roster.agent-avatars"):
+            entry = (path, mtime)
+            break
+    if not entry:
+        return {}
+    path, mtime = entry
+    if _avatars[0] == mtime:
+        return _avatars[1]
+    out = {}
+    try:
+        with open(path, "rb") as f:
+            entries = json.load(f).get("value", {}).get("entries") or []
+    except (OSError, ValueError):
+        entries = []
+    os.makedirs(CACHE, exist_ok=True)
+    for e in entries:
+        bot_id, version, url = e.get("id"), e.get("version"), e.get("dataUrl") or ""
+        if not bot_id or not version or "," not in url:
+            continue
+        head, b64 = url.split(",", 1)
+        ext = "png" if "png" in head else ("jpg" if "jpeg" in head or "jpg" in head else "img")
+        dest = os.path.join(CACHE, "%s.%s" % (version, ext))
+        if not os.path.exists(dest):
+            try:
+                tmp = dest + ".part"
+                with open(tmp, "wb") as f:
+                    f.write(base64.b64decode(b64))
+                os.replace(tmp, dest)
+            except (OSError, ValueError):
+                continue
+        out[bot_id] = dest
+    # Drop pictures nobody wears any more, so changing an avatar twice does not
+    # leave two dead files behind.
+    keep = set(os.path.basename(p) for p in out.values())
+    try:
+        for name in os.listdir(CACHE):
+            if name not in keep:
+                os.remove(os.path.join(CACHE, name))
+    except OSError:
+        pass
+    _avatars = (mtime, out)
+    return out
+
+
 def marker():
     try:
         with open(MARKER) as f:
@@ -132,6 +194,7 @@ def snapshot(index):
     pinned = refs.get("pinnedAgentIds") or []
 
     now = time.time()
+    pictures = avatars(index)
     bots = []
     for row in rows:
         if not isinstance(row, dict) or row.get("isHiddenFromSidebar"):
@@ -147,6 +210,8 @@ def snapshot(index):
             "description": row.get("description") or "",
             "shape": row.get("avatarShape") or ("group" if row.get("isGroup") else "squircle"),
             "color": color,
+            # A picture wins over the shape, the way it does in the app.
+            "avatar": pictures.get(row.get("id")) if row.get("avatarVersion") else None,
             "hex": COLORS.get(color or "", None),
             "is_group": bool(row.get("isGroup")),
             "members": len(row.get("memberIds") or []),
@@ -202,7 +267,8 @@ def main():
         signature = (
             len(index),
             tuple(sorted((k, m) for k, (_, m) in index.items()
-                         if k.endswith(("last-roster", "last-sections", "last-agent", "ui-agent-refs"))
+                         if k.endswith(("last-roster", "last-sections", "last-agent",
+                                        "ui-agent-refs", "agent-avatars"))
                          or "transcript.replicas." in k)),
             os.path.getmtime(MARKER) if os.path.exists(MARKER) else 0,
         )

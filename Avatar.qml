@@ -19,6 +19,16 @@ Item {
   // Punch the eyes through the shape instead of painting them. The logo in the
   // bar is a single flat colour, so its eyes have to be holes to read at all -
   // whatever is behind the bar shows through, in any theme.
+  // A bot can wear a picture instead of a face. The app gives those rows no
+  // shape and no colour, so the picture is masked to a squircle and the eyes
+  // stay out of the way - it has a face of its own.
+  property url image: ""
+  readonly property bool wearsImage: String(image) !== ""
+  onImageChanged: {
+    if (wearsImage) canvas.loadImage(image)
+    else canvas.requestPaint()
+  }
+
   property bool cutoutEyes: false
   // Drawn as an outline rather than a solid. The bar's other icons are line
   // glyphs, so a filled shape sits heavier than everything around it.
@@ -238,12 +248,29 @@ Item {
         angle: root.tilt + root.spin
       }
     ]
+    onImageLoaded: requestPaint()
     onPaint: {
       var ctx = getContext("2d")
       ctx.reset()
       var s = root.u, x0 = (width - s) / 2, y0 = (height - s) / 2
       ctx.save()
       ctx.translate(x0, y0)
+      if (root.wearsImage) {
+        if (isImageLoaded(root.image)) {
+          ctx.save()
+          root.path(ctx, s)
+          ctx.clip()
+          ctx.drawImage(root.image, 0, 0, s, s)
+          ctx.restore()
+        } else {
+          // Not decoded yet: hold the shape rather than flash an empty square.
+          ctx.fillStyle = root.fill
+          root.path(ctx, s)
+          ctx.fill()
+        }
+        ctx.restore()
+        return
+      }
       if (root.outlined) {
         // Inset by half the stroke so the outline stays inside the icon slot
         // instead of clipping against it.
