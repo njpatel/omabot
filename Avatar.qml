@@ -123,8 +123,9 @@ Item {
 
   SequentialAnimation {
     id: blinkAnim
-    NumberAnimation { target: root; property: "blink"; to: 0.06; duration: 90; easing.type: Easing.InQuad }
-    NumberAnimation { target: root; property: "blink"; to: 1.0; duration: 150; easing.type: Easing.OutQuad }
+    NumberAnimation { target: root; property: "blink"; to: 0.06; duration: 130; easing.type: Easing.InQuad }
+    PauseAnimation { duration: 60 }
+    NumberAnimation { target: root; property: "blink"; to: 1.0; duration: 210; easing.type: Easing.OutQuad }
   }
 
   // ---------------------------------------------------------------- flourishes
@@ -199,6 +200,11 @@ Item {
   readonly property var flourishes: [hopAnim, wiggleAnim, popAnim, nodAnim, lookAnim, celebrateAnim]
   readonly property int flourishCount: flourishes.length
 
+  // The ones that still read at bar size. A nod or a look around turns the
+  // head, which is plenty at panel size but moves an eye a pixel at 13px -
+  // you see the blink that happens to land near it and nothing else.
+  readonly property var boldFlourishes: [hopAnim, popAnim, wiggleAnim, celebrateAnim]
+
   // Play a particular flourish, so a caller greeting several avatars at once
   // can hand each of them a different one.
   function play(index) {
@@ -208,6 +214,13 @@ Item {
     if (pick) pick.restart()
   }
   function playRandom() { play(Math.floor(Math.random() * flourishes.length)) }
+
+  function playBold(index) {
+    if (!root.animate) return
+    var n = boldFlourishes.length
+    var pick = boldFlourishes[((index % n) + n) % n]
+    if (pick) pick.restart()
+  }
 
   // ---------------------------------------------------------------- render
   Canvas {

@@ -242,6 +242,9 @@ Panel {
   // is even open. Same shape as the panel's greeting: each one hears the
   // signal and owns its own timing.
   signal barGreeted()
+  // Shifts which flourish each position gets, so the same three bots do not
+  // do the same three things every time you pass the bar.
+  property int barGreetSeed: 0
 
   Timer {
     id: greetOnOpen
@@ -318,6 +321,7 @@ Panel {
     function greet(): string {
       if (!root.opened) root.open()
       root.requestGreeting(true)
+      root.barGreetSeed += 1
       root.barGreeted()
       return "greeting"
     }
@@ -474,7 +478,7 @@ Panel {
           Timer {
             id: greet
             interval: 30 + barAvatar.index * 90
-            onTriggered: barAvatar.play(root.nextFlourish())
+            onTriggered: barAvatar.playBold(barAvatar.index + root.barGreetSeed)
           }
         }
       }
@@ -510,6 +514,7 @@ Panel {
     onClicked: function(mouse) { root.barPressed(mouse.button) }
     onEntered: {
       if (root.bar) root.bar.showTooltip(row, root.barTooltip)
+      root.barGreetSeed += 1
       root.barGreeted()
     }
     onExited: if (root.bar) root.bar.hideTooltip(row)
