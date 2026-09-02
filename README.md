@@ -13,7 +13,7 @@
 
 Your [Grok Bot](https://x.ai/bot) roster in the [Omarchy](https://omarchy.org) bar. Every bot is drawn as itself - the shape and colour it has in the app - wearing the face of whatever it wants from you.
 
-![The roster, by who needs you and by channel](assets/omabot.png)
+![The roster, whoever needs you first](assets/omabot.png)
 
 ## Install
 
@@ -54,6 +54,8 @@ Every bot, with its title, its last message, how long ago, and an unread badge. 
 | `Esc` | close |
 
 The avatars greet you when the panel opens, and their eyes follow the pointer while it is over the list.
+
+![The greeting, and the eyes](assets/faces.gif)
 
 ## Faces
 
