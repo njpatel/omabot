@@ -20,6 +20,10 @@ Item {
   // bar is a single flat colour, so its eyes have to be holes to read at all -
   // whatever is behind the bar shows through, in any theme.
   property bool cutoutEyes: false
+  // Drawn as an outline rather than a solid. The bar's other icons are line
+  // glyphs, so a filled shape sits heavier than everything around it.
+  property bool outlined: false
+  readonly property real outlineWidth: Math.max(0.9, u * 0.06)
   property bool animate: true
 
   // Which face to wear. The cheerful half of the studio's set: it also ships
@@ -227,9 +231,23 @@ Item {
       var s = root.u, x0 = (width - s) / 2, y0 = (height - s) / 2
       ctx.save()
       ctx.translate(x0, y0)
-      ctx.fillStyle = root.fill
-      root.path(ctx, s)
-      ctx.fill()
+      if (root.outlined) {
+        // Inset by half the stroke so the outline stays inside the icon slot
+        // instead of clipping against it.
+        var w = root.outlineWidth
+        ctx.strokeStyle = root.fill
+        ctx.lineWidth = w
+        ctx.lineJoin = "round"
+        ctx.save()
+        ctx.translate(w / 2, w / 2)
+        root.path(ctx, s - w)
+        ctx.restore()
+        ctx.stroke()
+      } else {
+        ctx.fillStyle = root.fill
+        root.path(ctx, s)
+        ctx.fill()
+      }
       root.drawFace(ctx, s)
       ctx.restore()
     }
@@ -237,6 +255,7 @@ Item {
 
   onShapeChanged: canvas.requestPaint()
   onFillChanged: canvas.requestPaint()
+  onOutlinedChanged: canvas.requestPaint()
   onBlinkChanged: canvas.requestPaint()
   onYawChanged: canvas.requestPaint()
   onPitchChanged: canvas.requestPaint()

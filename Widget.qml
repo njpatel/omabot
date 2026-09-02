@@ -396,20 +396,29 @@ Panel {
 
     // The Grok Bot mark, always. Drawn rather than loaded from the app icon so
     // it takes the bar's colours like every other widget instead of dropping a
-    // dark tile into the theme. Dimmed when the app is not running.
+    // dark tile into the theme, and outlined so it carries the same weight as
+    // the line glyphs beside it. Dimmed when the app is not running.
     BarIconButton {
       id: button
       bar: root.bar
       text: "\u{f06a9}"
       onPressed: function(buttonCode) { root.barPressed(buttonCode) }
       iconComponent: Component {
-        Avatar {
-          shape: "squircle"
-          fill: root.bar ? root.bar.barForeground : root.fg
-          cutoutEyes: true
-          face: "neutral"
-          opacity: root.app.running ? 1.0 : 0.45
-          Behavior on opacity { NumberAnimation { duration: 220 } }
+        Item {
+          // The glyphs beside it carry their own optical padding; a shape drawn
+          // to the full canvas would stand taller than all of them.
+          Avatar {
+            anchors.centerIn: parent
+            width: Math.round(parent.width * 0.82)
+            height: width
+            shape: "squircle"
+            outlined: true
+            fill: root.bar ? root.bar.barForeground : root.fg
+            eyeColor: root.bar ? root.bar.barForeground : root.fg
+            face: "neutral"
+            opacity: root.app.running ? 1.0 : 0.45
+            Behavior on opacity { NumberAnimation { duration: 220 } }
+          }
         }
       }
     }
