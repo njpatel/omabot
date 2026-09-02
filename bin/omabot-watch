@@ -65,6 +65,45 @@ def load(index, suffix):
     return None
 
 
+# A bot is working when its transcript ends on a user message it has not
+# answered yet. The app streams replies over its gateway and only persists the
+# finished message, so this is the honest local signal - and it is the same
+# window the app itself shows a busy avatar for. Parsing is cached by mtime:
+# transcripts are large and only change when something happens.
+_transcripts = {}
+
+
+def working_state(index, bot_id, now):
+    entry = None
+    for key, (path, mtime) in index.items():
+        if key.endswith("transcript.replicas." + str(bot_id)):
+            entry = (path, mtime)
+            break
+    if not entry:
+        return False, 0.0
+    path, mtime = entry
+    cached = _transcripts.get(bot_id)
+    if not cached or cached[0] != mtime:
+        try:
+            with open(path, "rb") as f:
+                entries = json.load(f).get("value", {}).get("entries") or []
+        except (OSError, ValueError):
+            entries = []
+        last_user = 0.0
+        for e in reversed(entries):
+            kind = e.get("kind")
+            if kind == "send-message":          # the bot answered after it
+                break
+            if kind == "message" and e.get("role") == "user":
+                last_user = (e.get("timestampMs") or 0) / 1000.0
+                break
+        _transcripts[bot_id] = (mtime, last_user)
+        cached = _transcripts[bot_id]
+    since = cached[1]
+    # Cap it: a reply that never came should not leave a bot working forever.
+    return bool(since and now - since < 900), since
+
+
 def marker():
     try:
         with open(MARKER) as f:
@@ -92,6 +131,7 @@ def snapshot(index):
     refs = load(index, "ui-agent-refs") or {}
     pinned = refs.get("pinnedAgentIds") or []
 
+    now = time.time()
     bots = []
     for row in rows:
         if not isinstance(row, dict) or row.get("isHiddenFromSidebar"):
@@ -99,6 +139,7 @@ def snapshot(index):
         entry = row.get("lastEntry") or {}
         last_text = entry.get("text") or entry.get("kind") or ""
         color = row.get("avatarColor")
+        working, working_since = working_state(index, row.get("id"), now)
         bots.append({
             "id": row.get("id"),
             "name": row.get("name") or "(unnamed)",
@@ -111,6 +152,8 @@ def snapshot(index):
             "members": len(row.get("memberIds") or []),
             "unread": int(row.get("unreadCount") or 0),
             "awaiting": bool(row.get("awaitingUserResponse")),
+            "working": working,
+            "working_since_ts": working_since,
             "muted": not row.get("notificationsEnabled", False),
             "last_text": last_text[:160],
             "last_activity_ts": (row.get("lastActivityAt") or 0) / 1000.0,
@@ -133,6 +176,7 @@ def snapshot(index):
     counts = {
         "bots": len(bots),
         "awaiting": sum(1 for b in bots if b["awaiting"]),
+        "working": sum(1 for b in bots if b["working"]),
         "unread": sum(1 for b in bots if b["unread"] > 0),
         "unread_messages": sum(b["unread"] for b in bots),
         "groups": sum(1 for b in bots if b["is_group"]),
@@ -158,7 +202,8 @@ def main():
         signature = (
             len(index),
             tuple(sorted((k, m) for k, (_, m) in index.items()
-                         if k.endswith(("last-roster", "last-sections", "last-agent", "ui-agent-refs")))),
+                         if k.endswith(("last-roster", "last-sections", "last-agent", "ui-agent-refs"))
+                         or "transcript.replicas." in k)),
             os.path.getmtime(MARKER) if os.path.exists(MARKER) else 0,
         )
         now = time.time()

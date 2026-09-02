@@ -68,10 +68,11 @@ Panel {
     var out = []
     for (var i = 0; i < bots.length; i++) {
       var b = bots[i]
-      if (b.awaiting || b.unread > 0) out.push(b)
+      if (b.awaiting || b.working || b.unread > 0) out.push(b)
     }
+    var rank = function(x) { return x.awaiting ? 0 : (x.working ? 1 : 2) }
     out.sort(function(a, b) {
-      if (a.awaiting !== b.awaiting) return a.awaiting ? -1 : 1
+      if (rank(a) !== rank(b)) return rank(a) - rank(b)
       return (b.last_activity_ts || 0) - (a.last_activity_ts || 0)
     })
     return out
@@ -83,6 +84,7 @@ Panel {
   readonly property double staleAfterS: 7 * 24 * 3600
   function moodFor(b) {
     if (b.awaiting) return "alert"
+    if (b.working) return "working"
     if (b.unread > 0) return "peek"
     if (b.last_activity_ts && (nowMs / 1000 - b.last_activity_ts) > staleAfterS) return "sleepy"
     return "calm"
@@ -105,6 +107,7 @@ Panel {
     } else {
       var sorted = bots.slice().sort(function(a, b) {
         if (a.awaiting !== b.awaiting) return a.awaiting ? -1 : 1
+        if (a.working !== b.working) return a.working ? -1 : 1
         if ((a.unread > 0) !== (b.unread > 0)) return a.unread > 0 ? -1 : 1
         return (b.last_activity_ts || 0) - (a.last_activity_ts || 0)
       })
@@ -221,6 +224,7 @@ Panel {
     var parts = []
     if ((c.awaiting || 0) > 0) parts.push("!" + c.awaiting)
     if ((c.unread_messages || 0) > 0) parts.push(String(c.unread_messages))
+    if (parts.length === 0 && (c.working || 0) > 0) parts.push("…")
     if (barMetric === "all" && parts.length === 0 && (c.bots || 0) > 0) parts.push(String(c.bots))
     return parts.join(" ")
   }
@@ -229,7 +233,8 @@ Panel {
     if (!app.running) return "Grok Bot is not running"
     var c = counts
     return (c.bots || 0) + " bots · " + (c.awaiting || 0) + " waiting on you · "
-      + (c.unread_messages || 0) + " unread · Grok Bot " + (app.version || "?")
+      + (c.working || 0) + " working · " + (c.unread_messages || 0) + " unread · Grok Bot "
+      + (app.version || "?")
   }
 
   implicitWidth: row.implicitWidth
@@ -379,6 +384,7 @@ Panel {
                   var c = root.counts
                   var bits = [(c.bots || 0) + " bots"]
                   if ((c.awaiting || 0) > 0) bits.push(c.awaiting + " waiting on you")
+                  if ((c.working || 0) > 0) bits.push(c.working + " working")
                   if ((c.unread_messages || 0) > 0) bits.push(c.unread_messages + " unread")
                   if ((c.groups || 0) > 0) bits.push(c.groups + " group")
                   return bits.join(" · ")
@@ -433,6 +439,7 @@ Panel {
                   spacing: Style.space(9)
 
                   Avatar {
+                    id: rowAvatar
                     anchors.verticalCenter: parent.verticalCenter
                     width: Style.space(28)
                     height: Style.space(28)
@@ -440,6 +447,13 @@ Panel {
                     fill: modelData.kind === "bot" ? root.colorFor(modelData.bot) : root.dim
                     eyeColor: root.eyeInk
                     mood: modelData.kind === "bot" ? root.moodFor(modelData.bot) : "calm"
+
+                    // Work just finished: take a bow.
+                    property bool wasWorking: false
+                    onMoodChanged: {
+                      if (mood === "working") wasWorking = true
+                      else if (wasWorking) { wasWorking = false; celebrate() }
+                    }
                   }
 
                   Column {
@@ -472,8 +486,11 @@ Panel {
 
                     Text {
                       width: parent.width
-                      text: modelData.kind === "bot" ? root.label(modelData.bot.last_text) : ""
-                      color: modelData.kind === "bot" && modelData.bot.awaiting ? root.urgent : root.dim
+                      text: modelData.kind === "bot"
+                        ? (modelData.bot.working ? "thinking…" : root.label(modelData.bot.last_text))
+                        : ""
+                      color: modelData.kind === "bot" && modelData.bot.awaiting ? root.urgent
+                             : (modelData.kind === "bot" && modelData.bot.working ? root.accent : root.dim)
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.caption
                       elide: Text.ElideRight
