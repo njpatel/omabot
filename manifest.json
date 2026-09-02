@@ -7,7 +7,9 @@
   "license": "Apache-2.0",
   "description": "Your Grok Bot roster in the bar: every bot drawn as its own avatar, with an expression for its state and one keypress to the app.",
   "preview": "preview.png",
-  "kinds": ["bar-widget"],
+  "kinds": [
+    "bar-widget"
+  ],
   "activation": "on-demand",
   "entryPoints": {
     "barWidget": "Widget.qml"
@@ -16,22 +18,45 @@
     "displayName": "Omabot",
     "description": "Bots waiting on you appear in the bar as their own avatars - the shape and colour they have in Grok Bot - and the panel lists every bot by channel with its last message.",
     "category": "AI",
-    "aliases": ["omabot", "grok", "grokbot", "bots"],
+    "aliases": [
+      "omabot",
+      "grok",
+      "grokbot",
+      "bots"
+    ],
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
       "barMetric": "attention",
       "groupBySection": "true",
-      "maxBarAvatars": 3
+      "maxBarAvatars": 3,
+      "ordering": "attention"
     },
     "schema": [
       {
         "key": "barMetric",
         "type": "enum",
         "label": "What the bar shows",
-        "options": ["attention", "all", "count", "none"],
+        "options": [
+          "attention",
+          "all",
+          "count",
+          "none"
+        ],
         "defaultValue": "attention",
         "description": "attention = avatars of bots waiting on you or with unread messages, plus their counts; all = also the bot count when nothing needs you; count = the number of bots only; none = no avatars."
+      },
+      {
+        "key": "ordering",
+        "type": "enum",
+        "label": "Panel order",
+        "options": [
+          "attention",
+          "channels",
+          "flat"
+        ],
+        "defaultValue": "attention",
+        "description": "attention = bots waiting on you first, longest wait at the top, then a rule and everyone else by recency; channels = the sections you set up in Grok Bot; flat = purely by last message."
       },
       {
         "key": "groupBySection",

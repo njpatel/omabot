@@ -26,6 +26,16 @@ Panel {
     Quickshell.execDetached(["omarchy", "bar", "set", "njpatel.omabot", "barMetric", barMetric])
   }
 
+  // attention: whoever wants you first (oldest wait first, so nobody is
+  // buried), a rule, then everyone else by recency. channels: the sidebar
+  // sections you set up in Grok Bot. flat: purely by recency.
+  property string ordering: String(setting("ordering", "attention"))
+  readonly property var orderings: ["attention", "channels", "flat"]
+  function cycleOrdering() {
+    ordering = orderings[(orderings.indexOf(ordering) + 1) % orderings.length]
+    Quickshell.execDetached(["omarchy", "bar", "set", "njpatel.omabot", "ordering", ordering])
+    cursor = 0
+  }
   property bool groupBySection: String(setting("groupBySection", "true")) !== "false"
   function toggleGrouping() {
     groupBySection = !groupBySection
@@ -82,11 +92,12 @@ Panel {
   // notifications off, and a roster of sleeping avatars says nothing. Gone
   // quiet for a week does say something, so that is what dozes.
   readonly property double staleAfterS: 7 * 24 * 3600
-  function moodFor(b) {
-    if (b.awaiting) return "alert"
-    if (b.unread > 0) return "peek"
-    if (b.last_activity_ts && (nowMs / 1000 - b.last_activity_ts) > staleAfterS) return "sleepy"
-    return "calm"
+  function faceFor(b) {
+    if (b.awaiting) return "attentive"
+    if (b.unread > 1) return "excited"
+    if (b.unread > 0) return "curious"
+    if (b.last_activity_ts && (nowMs / 1000 - b.last_activity_ts) > staleAfterS) return "drowsy"
+    return "neutral"
   }
   function colorFor(b) { return b.hex ? b.hex : (b.color === "black" ? fg : dim) }
 
@@ -94,7 +105,21 @@ Panel {
   readonly property var rows: {
     var out = []
     if (!snap) return out
-    if (groupBySection && sections.length > 0) {
+    if (ordering === "attention") {
+      var wants = [], rest = []
+      for (var b = 0; b < bots.length; b++) {
+        var bot = bots[b]
+        ;(bot.awaiting || bot.unread > 0 ? wants : rest).push(bot)
+      }
+      // Waiting longest first: the one that has been ignored most deserves the top.
+      wants.sort(function(x, y) { return (x.last_activity_ts || 0) - (y.last_activity_ts || 0) })
+      rest.sort(function(x, y) { return (y.last_activity_ts || 0) - (x.last_activity_ts || 0) })
+      for (var w = 0; w < wants.length; w++) out.push({ kind: "bot", bot: wants[w] })
+      if (wants.length > 0 && rest.length > 0) out.push({ kind: "rule" })
+      for (var r2 = 0; r2 < rest.length; r2++) out.push({ kind: "bot", bot: rest[r2] })
+      return out
+    }
+    if (ordering === "channels" && sections.length > 0) {
       var byId = ({})
       for (var i = 0; i < bots.length; i++) byId[bots[i].id] = bots[i]
       for (var s = 0; s < sections.length; s++) {
@@ -105,9 +130,6 @@ Panel {
       }
     } else {
       var sorted = bots.slice().sort(function(a, b) {
-        if (a.awaiting !== b.awaiting) return a.awaiting ? -1 : 1
-        if (a.working !== b.working) return a.working ? -1 : 1
-        if ((a.unread > 0) !== (b.unread > 0)) return a.unread > 0 ? -1 : 1
         return (b.last_activity_ts || 0) - (a.last_activity_ts || 0)
       })
       for (var j = 0; j < sorted.length; j++) out.push({ kind: "bot", bot: sorted[j] })
@@ -149,36 +171,23 @@ Panel {
     cursor = 0
     panelFlick.contentY = 0
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
-    greetTimer.everyone = false
-    greetTimer.slot = 0
-    greetTimer.restart()
+    requestGreeting(false)
   }
 
-  function greetAll(everyone) {
-    greetTimer.everyone = !!everyone
-    greetTimer.everyone = false
-    greetTimer.slot = 0
-    greetTimer.restart()
-  }
 
-  // One flourish per bot that wants you, 90ms apart, once per opening.
+  // Rows greet themselves when this fires: each avatar owns its own timing,
+  // so there is no central loop to fall out of step with the list.
+  signal greetRequested(bool everyone)
+
   Timer {
-    id: greetTimer
-    property int slot: 0
-    property bool everyone: false
-    interval: 90
-    repeat: true
-    running: false
-    onTriggered: {
-      var greeted = 0
-      for (var i = 0; i < repeater.count; i++) {
-        var item = repeater.itemAt(i)
-        if (!item || !(item.wantsGreeting || everyone)) continue
-        if (greeted === slot) { item.greet(); slot++; return }
-        greeted++
-      }
-      stop()
-    }
+    id: greetOnOpen
+    interval: 260
+    onTriggered: root.greetRequested(greetEveryone)
+    property bool greetEveryone: false
+  }
+  function requestGreeting(everyone) {
+    greetOnOpen.greetEveryone = !!everyone
+    greetOnOpen.restart()
   }
 
   // Focus the Grok Bot window. The app exposes no deep link to a single bot,
@@ -203,9 +212,16 @@ Panel {
     function close(): void { root.close() }
     function toggle(): void { root.toggle() }
     function scrub(): string { root.scrub = !root.scrub; return root.scrub ? "scrubbed" : "clear" }
-    function group(): string { root.toggleGrouping(); return root.groupBySection ? "sections" : "flat" }
+    function group(): string { root.cycleOrdering(); return root.ordering }
+    function order(mode: string): string { root.ordering = mode; return root.ordering }
     // Play the greeting on demand: every bot, whether or not it has news.
-    function greet(): string { root.greetAll(true); return root.opened ? "greeting" : "panel is closed" }
+    // Opens the panel first, because a panel loses focus - and closes - the
+    // moment you type the command in a terminal.
+    function greet(): string {
+      if (!root.opened) root.open()
+      root.requestGreeting(true)
+      return "greeting"
+    }
     function geometry(): string {
       return JSON.stringify({ x: panel.cardOrigin.x, y: panel.cardOrigin.y, w: panel.contentWidth, h: panel.contentHeight })
     }
@@ -310,7 +326,7 @@ Panel {
           shape: modelData.shape
           fill: root.colorFor(modelData)
           eyeColor: root.eyeInk
-          mood: root.moodFor(modelData)
+          face: root.faceFor(modelData)
         }
       }
 
@@ -323,7 +339,7 @@ Panel {
         fill: root.bots.length > 0 ? Qt.rgba(root.colorFor(root.bots[0]).r, root.colorFor(root.bots[0]).g,
                                              root.colorFor(root.bots[0]).b, 0.55) : root.dim
         eyeColor: root.eyeInk
-        mood: "calm"
+        face: "neutral"
       }
     }
 
@@ -387,7 +403,22 @@ Panel {
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(t) {
         if (t === "r") root.cycleBarMetric()
-        else if (t === "g" || t === "G") root.toggleGrouping()
+        else if (t === "g" || t === "G") root.cycleOrdering()
+      }
+
+      // Where the pointer is, in panel coordinates. Avatars map it into their
+      // own space and lean toward it; -1 means "not over the panel".
+      property real pointerX: -1
+      property real pointerY: -1
+
+      MouseArea {
+        id: pointerTracker
+        anchors.fill: parent
+        hoverEnabled: true
+        acceptedButtons: Qt.NoButton
+        propagateComposedEvents: true
+        onPositionChanged: function(mouse) { keyCatcher.pointerX = mouse.x; keyCatcher.pointerY = mouse.y }
+        onExited: { keyCatcher.pointerX = -1; keyCatcher.pointerY = -1 }
       }
 
       Flickable {
@@ -455,12 +486,35 @@ Panel {
               required property var modelData
               required property int index
               width: column.width
-              height: modelData.kind === "section" ? Style.space(26) : Style.space(46)
+              height: modelData.kind === "section" ? Style.space(26)
+                    : modelData.kind === "rule" ? Style.space(13) : Style.space(46)
+
+              // The break between "wants you" and everyone else.
+              Rectangle {
+                visible: modelData.kind === "rule"
+                anchors.verticalCenter: parent.verticalCenter
+                width: parent.width
+                height: 1
+                color: root.faint
+              }
 
               // Bots with news get greeted when the panel opens.
               readonly property bool wantsGreeting: modelData.kind === "bot"
                 && (modelData.bot.unread > 0 || modelData.bot.awaiting)
-              function greet() { if (rowAvatar) rowAvatar.playRandom() }
+
+              Connections {
+                target: root
+                function onGreetRequested(everyone) {
+                  if (rowItem.modelData.kind !== "bot") return
+                  if (everyone || rowItem.wantsGreeting) rowGreet.restart()
+                }
+              }
+              // Staggered by position so the flourishes read as a wave.
+              Timer {
+                id: rowGreet
+                interval: 60 + rowItem.index * 85
+                onTriggered: if (rowAvatar) rowAvatar.playRandom()
+              }
 
               // section header
               Text {
@@ -499,13 +553,21 @@ Panel {
                     shape: modelData.kind === "bot" ? modelData.bot.shape : "blob"
                     fill: modelData.kind === "bot" ? root.colorFor(modelData.bot) : root.dim
                     eyeColor: root.eyeInk
-                    mood: modelData.kind === "bot" ? root.moodFor(modelData.bot) : "calm"
+                    face: modelData.kind === "bot" ? root.faceFor(modelData.bot) : "neutral"
 
-                    // Work just finished: take a bow.
-                    property bool wasWorking: false
-                    onMoodChanged: {
-                      if (mood === "working") wasWorking = true
-                      else if (wasWorking) { wasWorking = false; celebrate() }
+                    // Watch the pointer while it is over the panel.
+                    readonly property point look: keyCatcher.pointerX < 0
+                      ? Qt.point(-1, -1)
+                      : mapFromItem(keyCatcher, keyCatcher.pointerX, keyCatcher.pointerY)
+                    followX: look.x
+                    followY: look.y
+
+                    // Just read, or just answered: take a bow.
+                    property bool wasWanted: false
+                    onFaceChanged: {
+                      var wants = face === "attentive" || face === "excited" || face === "curious"
+                      if (wants) wasWanted = true
+                      else if (wasWanted) { wasWanted = false; celebrate() }
                     }
                   }
 
@@ -613,7 +675,7 @@ Panel {
             height: Style.space(30)
             Text {
               anchors.verticalCenter: parent.verticalCenter
-              text: "j/k move · ⏎ open app · g " + (root.groupBySection ? "channels" : "flat")
+              text: "j/k move · ⏎ open app · g " + root.ordering
                     + " · h hide · r bar " + root.barMetric
               color: root.dim
               font.family: root.fontFamily
