@@ -13,7 +13,7 @@
 
 Your [Grok Bot](https://x.ai/bot) roster in the [Omarchy](https://omarchy.org) bar. Every bot is drawn as itself - the shape and colour it has in the app, or the picture you gave it - wearing the face of whatever it wants from you.
 
-![The roster, whoever needs you first](assets/omabot.png)
+![The panel, greeting you and following the pointer](assets/faces.gif)
 
 ## Install
 
@@ -44,6 +44,10 @@ Bring the pointer near and they look up at you, one after another.
 
 Every bot, with its title, its last message, how long ago, and an unread badge. By default the ones waiting on you come first - longest wait at the top, so nobody is buried - then a rule, then everyone else by recency.
 
+![The roster, whoever needs you first](assets/omabot.png)
+
+The avatars greet you when the panel opens, and their eyes follow the pointer while it is over the list.
+
 | key | |
 |---|---|
 | `j` `k` | move |
@@ -52,10 +56,6 @@ Every bot, with its title, its last message, how long ago, and an unread badge. 
 | `h` | redact names and messages, for sharing a screen |
 | `r` | cycle what sits beside the mark |
 | `Esc` | close |
-
-The avatars greet you when the panel opens, and their eyes follow the pointer while it is over the list.
-
-![The greeting, and the eyes](assets/faces.gif)
 
 ## Faces
 
