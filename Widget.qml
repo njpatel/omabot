@@ -644,10 +644,12 @@ Panel {
                     face: modelData.kind === "bot" ? root.faceFor(modelData.bot) : "neutral"
                     Component.onCompleted: root.flourishCount = flourishCount
 
-                    // Watch the pointer while it is over the panel.
-                    readonly property point look: keyCatcher.pointerX < 0
-                      ? Qt.point(-1, -1)
-                      : mapFromItem(keyCatcher, keyCatcher.pointerX, keyCatcher.pointerY)
+                    // Watch the pointer while it is over the panel. Every row
+                    // maps the one shared position into its own coordinates, so
+                    // the whole list looks at the same spot from where it sits.
+                    readonly property point look: mapFromItem(keyCatcher,
+                      keyCatcher.pointerX, keyCatcher.pointerY)
+                    looking: keyCatcher.pointerX >= 0
                     followX: look.x
                     followY: look.y
 

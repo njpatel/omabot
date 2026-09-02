@@ -63,14 +63,25 @@ Item {
   property real spin: 0.0
   property real pop: 1.0
 
-  // Aim at a point in this item's coordinates; negative disables.
-  property real followX: -1
-  property real followY: -1
-  readonly property bool following: followX >= 0 && followY >= 0
+  // Aim at a point in this item's coordinates. The point is usually outside
+  // the avatar - a bot at the top of a list looking down at a cursor near the
+  // bottom - so the coordinates are free to be negative or far larger than the
+  // item, and `looking` says whether to aim at all. Getting that wrong is why
+  // half a list can appear frozen: only the rows whose mapped point happened
+  // to be positive would turn.
+  property bool looking: false
+  property real followX: 0
+  property real followY: 0
+  readonly property bool following: looking
+
+  // Direction to the point, saturating a couple of avatar-widths away, so a
+  // distant cursor still turns every head fully toward it.
+  readonly property real reachX: Math.max(1, width * 2.2)
+  readonly property real reachY: Math.max(1, height * 2.2)
   readonly property real aimYaw: following
-    ? Math.max(-26, Math.min(26, (followX / Math.max(1, width) - 0.5) * 52)) : 0
+    ? Math.max(-1, Math.min(1, (followX - width / 2) / reachX)) * 26 : 0
   readonly property real aimPitch: following
-    ? Math.max(-20, Math.min(20, (0.5 - followY / Math.max(1, height)) * 40)) : 0
+    ? Math.max(-1, Math.min(1, (height / 2 - followY) / reachY)) * 20 : 0
 
   // The studio turns its heads with spring(stiffness 320, damping 26, mass .6);
   // these are the Qt equivalents, tuned to the same overshoot-and-settle feel.
@@ -90,6 +101,7 @@ Item {
   }
   onFollowXChanged: if (following) restGaze()
   onFollowYChanged: if (following) restGaze()
+  onLookingChanged: restGaze()
   onFollowingChanged: restGaze()
   onFaceChanged: restGaze()
   Component.onCompleted: restGaze()
