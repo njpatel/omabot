@@ -1,0 +1,180 @@
+#!/usr/bin/env python3
+# omabot-watch - follows Grok Bot's local state and streams it as JSON lines.
+#
+#   stdout  {"generated_ts":…, "counts":{…}, "sections":[…], "bots":[…]}
+#   args    --interval N   seconds between checks (default 2)
+#
+# Grok Bot keeps its client state in ~/.config/Grok Bot/sand-client-persistence
+# as blobs whose filenames are base32 of the state key, rewritten whenever
+# something changes. Nothing here is a documented contract - the roster is at
+# schemaVersion 4 - so every field is read defensively and a shape we do not
+# recognise degrades to "no bots" rather than crashing the widget.
+import base64
+import json
+import os
+import sys
+import time
+
+STATE = os.path.expanduser("~/.config/Grok Bot")
+PERSIST = os.path.join(STATE, "sand-client-persistence")
+MARKER = os.path.join(STATE, "sand-session-marker.json")
+
+# Avatar palette, lifted from the app bundle so the widget matches it exactly.
+COLORS = {
+    "red": "#FF263C", "orange": "#FF6700", "yellow": "#FF9800", "green": "#00C972",
+    "cyan": "#00BCA6", "blue": "#1084FE", "violet": "#9159FE", "magenta": "#FF309B",
+    "brown": "#936439", "gray": "#777777",
+}
+
+
+def decode_key(path):
+    name = os.path.basename(path)
+    if not name.endswith(".blob"):
+        return ""
+    name = name[:-5]
+    try:
+        return base64.b32decode(name.upper() + "=" * ((8 - len(name) % 8) % 8)).decode("utf-8", "replace")
+    except Exception:
+        return ""
+
+
+def blobs():
+    """key -> (path, mtime) for every persistence blob."""
+    out = {}
+    try:
+        for entry in os.scandir(PERSIST):
+            if not entry.name.endswith(".blob"):
+                continue
+            key = decode_key(entry.path)
+            if key:
+                out[key] = (entry.path, entry.stat().st_mtime)
+    except OSError:
+        pass
+    return out
+
+
+def load(index, suffix):
+    """Value of the first blob whose key ends with `suffix`."""
+    for key, (path, _) in index.items():
+        if key.endswith(suffix):
+            try:
+                with open(path, "rb") as f:
+                    return json.load(f).get("value")
+            except (OSError, ValueError):
+                return None
+    return None
+
+
+def marker():
+    try:
+        with open(MARKER) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return {"running": False}
+    alive = data.get("aliveAtMs", 0) / 1000.0
+    return {
+        "running": (time.time() - alive) < 120,
+        "version": data.get("appVersion"),
+        "pid": data.get("pid"),
+        "started_ts": (data.get("startedAtMs") or 0) / 1000.0,
+        "alive_ts": alive,
+        "crash_seen": bool(data.get("crashSeen")),
+    }
+
+
+def snapshot(index):
+    roster = load(index, "roster.last-roster") or {}
+    rows = roster.get("rows") if isinstance(roster, dict) else None
+    if not isinstance(rows, list):
+        rows = []
+    sections = (load(index, "sidebar.last-sections") or {}).get("sections") or []
+    selection = (load(index, "selection.last-agent") or {}).get("agentId")
+    refs = load(index, "ui-agent-refs") or {}
+    pinned = refs.get("pinnedAgentIds") or []
+
+    bots = []
+    for row in rows:
+        if not isinstance(row, dict) or row.get("isHiddenFromSidebar"):
+            continue
+        entry = row.get("lastEntry") or {}
+        last_text = entry.get("text") or entry.get("kind") or ""
+        color = row.get("avatarColor")
+        bots.append({
+            "id": row.get("id"),
+            "name": row.get("name") or "(unnamed)",
+            "title": row.get("title") or "",
+            "description": row.get("description") or "",
+            "shape": row.get("avatarShape") or ("group" if row.get("isGroup") else "squircle"),
+            "color": color,
+            "hex": COLORS.get(color or "", None),
+            "is_group": bool(row.get("isGroup")),
+            "members": len(row.get("memberIds") or []),
+            "unread": int(row.get("unreadCount") or 0),
+            "awaiting": bool(row.get("awaitingUserResponse")),
+            "muted": not row.get("notificationsEnabled", False),
+            "last_text": last_text[:160],
+            "last_activity_ts": (row.get("lastActivityAt") or 0) / 1000.0,
+            "last_viewed_ts": (row.get("lastViewedAt") or 0) / 1000.0,
+            "focused": row.get("id") == selection,
+            "pinned": row.get("id") in pinned,
+        })
+
+    by_id = {b["id"]: b for b in bots}
+    grouped, seen = [], set()
+    for section in sections if isinstance(sections, list) else []:
+        ids = [i for i in (section.get("agentIds") or []) if i in by_id]
+        seen.update(ids)
+        if ids or section.get("id") != "__agents__":
+            grouped.append({"id": section.get("id"), "name": section.get("name") or "", "bot_ids": ids})
+    loose = [b["id"] for b in bots if b["id"] not in seen]
+    if loose:
+        grouped.append({"id": "__loose__", "name": "Unassigned", "bot_ids": loose})
+
+    counts = {
+        "bots": len(bots),
+        "awaiting": sum(1 for b in bots if b["awaiting"]),
+        "unread": sum(1 for b in bots if b["unread"] > 0),
+        "unread_messages": sum(b["unread"] for b in bots),
+        "groups": sum(1 for b in bots if b["is_group"]),
+    }
+    return {"generated_ts": time.time(), "app": marker(), "counts": counts,
+            "sections": grouped, "bots": bots}
+
+
+def main():
+    args = sys.argv[1:]
+    interval = 2.0
+    if "--interval" in args:
+        try:
+            interval = max(0.5, float(args[args.index("--interval") + 1]))
+        except (IndexError, ValueError):
+            pass
+
+    last_signature = None
+    last_emit = 0.0
+    while True:
+        index = blobs()
+        # Cheap change detection: the roster/marker mtimes plus the blob count.
+        signature = (
+            len(index),
+            tuple(sorted((k, m) for k, (_, m) in index.items()
+                         if k.endswith(("last-roster", "last-sections", "last-agent", "ui-agent-refs")))),
+            os.path.getmtime(MARKER) if os.path.exists(MARKER) else 0,
+        )
+        now = time.time()
+        # Emit on change, and at least once a minute so "app quit" is noticed.
+        if signature != last_signature or now - last_emit > 60:
+            try:
+                sys.stdout.write(json.dumps(snapshot(index), separators=(",", ":")) + "\n")
+                sys.stdout.flush()
+            except BrokenPipeError:
+                return
+            last_signature, last_emit = signature, now
+        time.sleep(interval)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass
