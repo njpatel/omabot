@@ -22,9 +22,17 @@ Expressions carry the state, so you can read the bar out of the corner of your e
 | | |
 |---|---|
 | **bobbing, brows up** | waiting on your answer |
+| **rocking, eyes searching** | working on your last message |
+| **a hop and a spin** | just finished |
 | **glancing sideways** | unread messages |
 | **blinking** | up to date |
-| **asleep** | nothing for a week |
+| **breathing slowly, asleep** | nothing for a week |
+
+"Working" is real, not decorative: Grok Bot streams replies over its gateway
+and persists only the finished message, so a transcript ending on a user
+message nobody has answered means that bot is thinking right now - the same
+window the app shows a busy avatar for. It expires after fifteen minutes, so a
+reply that never came cannot leave a bot working forever.
 
 The panel lists every bot, grouped by the channels you set up in Grok Bot, with its title, last message, how long ago, and an unread badge.
 
