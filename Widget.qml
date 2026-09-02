@@ -514,14 +514,33 @@ Panel {
       property real pointerX: -1
       property real pointerY: -1
 
+      function pointerAt(x, y) {
+        pointerLeave.stop()
+        pointerX = x
+        pointerY = y
+      }
+
+      // Hover belongs to the topmost item, so crossing from a row onto a
+      // separator - or between two rows - hands it over and reads as leaving.
+      // Wait a moment before believing it: a real departure stays away, a
+      // handover puts the pointer back within a frame or two, and the eyes
+      // never snap forward for it.
+      function pointerGone() { pointerLeave.restart() }
+
+      Timer {
+        id: pointerLeave
+        interval: 260
+        onTriggered: { keyCatcher.pointerX = -1; keyCatcher.pointerY = -1 }
+      }
+
       MouseArea {
         id: pointerTracker
         anchors.fill: parent
         hoverEnabled: true
         acceptedButtons: Qt.NoButton
         propagateComposedEvents: true
-        onPositionChanged: function(mouse) { keyCatcher.pointerX = mouse.x; keyCatcher.pointerY = mouse.y }
-        onExited: { keyCatcher.pointerX = -1; keyCatcher.pointerY = -1 }
+        onPositionChanged: function(mouse) { keyCatcher.pointerAt(mouse.x, mouse.y) }
+        onExited: keyCatcher.pointerGone()
       }
 
       Flickable {
@@ -756,15 +775,19 @@ Panel {
                   anchors.fill: parent
                   hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
-                  onEntered: root.cursor = index
+                  onEntered: {
+                    root.cursor = index
+                    var e = mapToItem(keyCatcher, mouseX, mouseY)
+                    keyCatcher.pointerAt(e.x, e.y)
+                  }
+                  onExited: keyCatcher.pointerGone()
                   onClicked: root.focusApp()
                   // Hover goes to the topmost item, so a row would otherwise
                   // starve the panel-wide tracker and the eyes would freeze
                   // exactly when you are looking at them.
                   onPositionChanged: function(mouse) {
                     var p = mapToItem(keyCatcher, mouse.x, mouse.y)
-                    keyCatcher.pointerX = p.x
-                    keyCatcher.pointerY = p.y
+                    keyCatcher.pointerAt(p.x, p.y)
                   }
                 }
               }
