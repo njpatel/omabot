@@ -590,7 +590,7 @@ Panel {
                   if ((c.groups || 0) > 0) bits.push(c.groups + " group")
                   return bits.join(" · ")
                 }
-                color: root.alarming ? root.urgent : root.fg
+                color: root.fg
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.bodySmall
               }
@@ -730,7 +730,9 @@ Panel {
                       text: modelData.kind === "bot"
                         ? (modelData.bot.working ? "thinking…" : root.label(modelData.bot.last_text))
                         : ""
-                      color: modelData.kind === "bot" && modelData.bot.awaiting ? root.urgent
+                      // Full foreground for the ones waiting on you, dimmed for
+                      // the rest: weight carries it, so nothing has to shout.
+                      color: modelData.kind === "bot" && modelData.bot.awaiting ? root.fg
                              : (modelData.kind === "bot" && modelData.bot.working ? root.accent : root.dim)
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.caption
