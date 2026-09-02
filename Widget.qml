@@ -61,7 +61,60 @@ Panel {
   readonly property color eyeInk: Color.background
 
   // ---------------------------------------------------------------- state
-  property var snap: null
+  property var liveSnap: null
+  readonly property var snap: demoMode ? demoSnap : liveSnap
+
+  // A staged roster for screenshots and for showing the thing off, using the
+  // agent roles xAI publishes as examples. Three bots want you, the rest are
+  // idle; ages are relative to when demo mode was switched on.
+  property bool demoMode: false
+  property double demoStart: 0
+  readonly property var demoSnap: {
+    var t = (demoStart || Date.now()) / 1000
+    var ago = function(mins) { return t - mins * 60 }
+    var bot = function(id, name, title, shape, color, hex, unread, awaiting, mins, text) {
+      return { id: id, name: name, title: title, description: "", shape: shape, color: color,
+               hex: hex, is_group: false, members: 0, unread: unread, awaiting: awaiting,
+               working: false, working_since_ts: 0, muted: false, last_text: text,
+               last_activity_ts: ago(mins), last_viewed_ts: ago(mins), focused: false, pinned: false }
+    }
+    var bots = [
+      bot("d1", "Chief of Staff", "Operations", "squircle", "red", "#FF263C", 0, true, 34,
+          "Your Thursday is triple-booked. Shall I move the Vercel sync to Friday?"),
+      bot("d2", "Account Health", "Customer Success", "hex", "violet", "#9159FE", 3, false, 12,
+          "Northwind's ingest dropped 60% this week - worth a call before renewal."),
+      bot("d3", "Bug Reproduction", "Engineering", "gem", "orange", "#FF6700", 1, false, 5,
+          "Reproduced #4812 on Firefox only. Trace and a failing test are attached."),
+      bot("d4", "Sales Outbound", "Revenue", "tablet", "green", "#00C972", 0, false, 88,
+          "42 accounts scored overnight; 9 drafts are waiting for your voice check."),
+      bot("d5", "Expense Manager", "Finance", "capsule", "cyan", "#00BCA6", 0, false, 210,
+          "August close is done. Two receipts still missing from the Berlin trip."),
+      bot("d6", "Talent Scout", "People", "leaf", "yellow", "#FF9800", 0, false, 400,
+          "Shortlisted 6 for the platform role. Two have Rust plus Wayland experience."),
+      bot("d7", "Paid Media", "Growth", "shield", "blue", "#1084FE", 0, false, 1500,
+          "CAC is flat at $180. I paused the two worst ad groups."),
+      bot("p1", "Trip Planner", "Personal", "cloud", "magenta", "#FF309B", 0, false, 2600,
+          "Held two flights to Lisbon for March. Neither needs paying until Friday."),
+      bot("p2", "Reading Pile", "Personal", "teardrop", "brown", "#936439", 0, false, 11000,
+          "Six saved articles this week. Two are the same paper with different headlines.")
+    ]
+    return {
+      generated_ts: t,
+      app: { running: true, version: "0.35.0", pid: 0, started_ts: ago(600), alive_ts: t, crash_seen: false },
+      counts: { bots: bots.length, awaiting: 1, working: 0, unread: 2, unread_messages: 4, groups: 0 },
+      sections: [
+        { id: "s1", name: "ACME", bot_ids: ["d1", "d2", "d3", "d4", "d5", "d6", "d7"] },
+        { id: "s2", name: "Personal", bot_ids: ["p1", "p2"] }
+      ],
+      bots: bots
+    }
+  }
+  function toggleDemo() {
+    demoStart = Date.now()
+    demoMode = !demoMode
+    cursor = 0
+    if (opened) requestGreeting(false)
+  }
   property bool scrub: false
   property int cursor: 0
   property double nowMs: Date.now()
@@ -158,7 +211,7 @@ Panel {
   function parseState(text) {
     try {
       var parsed = JSON.parse(String(text || ""))
-      if (parsed && typeof parsed === "object") { root.snap = parsed; root.nowMs = Date.now() }
+      if (parsed && typeof parsed === "object") { root.liveSnap = parsed; root.nowMs = Date.now() }
     } catch (e) {
       console.warn("omabot", "bad state line", e)
     }
@@ -186,8 +239,36 @@ Panel {
     property bool greetEveryone: false
   }
   function requestGreeting(everyone) {
+    dealFlourishes()
     greetOnOpen.greetEveryone = !!everyone
     greetOnOpen.restart()
+  }
+
+  // Greetings deal from a shuffled deck rather than rolling independently, so
+  // three bots never all hop at once. Past a full deck it reshuffles, and it
+  // will not repeat the card that was just played across that seam.
+  property var flourishDeck: []
+  property int flourishCount: 6
+  property int lastFlourish: -1
+  function dealFlourishes() {
+    var deck = []
+    for (var i = 0; i < flourishCount; i++) deck.push(i)
+    for (var j = deck.length - 1; j > 0; j--) {
+      var k = Math.floor(Math.random() * (j + 1))
+      var t = deck[j]; deck[j] = deck[k]; deck[k] = t
+    }
+    if (deck.length > 1 && deck[deck.length - 1] === lastFlourish) {
+      var swap = deck[0]; deck[0] = deck[deck.length - 1]; deck[deck.length - 1] = swap
+    }
+    flourishDeck = deck
+  }
+  function nextFlourish() {
+    if (!flourishDeck || flourishDeck.length === 0) dealFlourishes()
+    var deck = flourishDeck
+    var pick = deck.pop()
+    flourishDeck = deck
+    lastFlourish = pick
+    return pick
   }
 
   // Focus the Grok Bot window. The app exposes no deep link to a single bot,
@@ -214,6 +295,12 @@ Panel {
     function scrub(): string { root.scrub = !root.scrub; return root.scrub ? "scrubbed" : "clear" }
     function group(): string { root.cycleOrdering(); return root.ordering }
     function order(mode: string): string { root.ordering = mode; return root.ordering }
+    // A staged roster for screenshots; call again to go back to the real one.
+    function demo(): string {
+      root.toggleDemo()
+      if (root.demoMode && !root.opened) root.open()
+      return root.demoMode ? "demo roster" : "live roster"
+    }
     // Play the greeting on demand: every bot, whether or not it has news.
     // Opens the panel first, because a panel loses focus - and closes - the
     // moment you type the command in a terminal.
@@ -448,6 +535,7 @@ Panel {
               spacing: Style.space(2)
               Text {
                 text: {
+                  if (root.demoMode) return "GROK BOT · demo roster"
                   if (!root.snap) return "starting…"
                   if (!root.app.running) return "GROK BOT · not running"
                   return "GROK BOT " + (root.app.version || "")
@@ -513,7 +601,7 @@ Panel {
               Timer {
                 id: rowGreet
                 interval: 60 + rowItem.index * 85
-                onTriggered: if (rowAvatar) rowAvatar.playRandom()
+                onTriggered: if (rowAvatar) rowAvatar.play(root.nextFlourish())
               }
 
               // section header
@@ -554,6 +642,7 @@ Panel {
                     fill: modelData.kind === "bot" ? root.colorFor(modelData.bot) : root.dim
                     eyeColor: root.eyeInk
                     face: modelData.kind === "bot" ? root.faceFor(modelData.bot) : "neutral"
+                    Component.onCompleted: root.flourishCount = flourishCount
 
                     // Watch the pointer while it is over the panel.
                     readonly property point look: keyCatcher.pointerX < 0
@@ -651,6 +740,14 @@ Panel {
                   cursorShape: Qt.PointingHandCursor
                   onEntered: root.cursor = index
                   onClicked: root.focusApp()
+                  // Hover goes to the topmost item, so a row would otherwise
+                  // starve the panel-wide tracker and the eyes would freeze
+                  // exactly when you are looking at them.
+                  onPositionChanged: function(mouse) {
+                    var p = mapToItem(keyCatcher, mouse.x, mouse.y)
+                    keyCatcher.pointerX = p.x
+                    keyCatcher.pointerY = p.y
+                  }
                 }
               }
             }

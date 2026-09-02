@@ -177,11 +177,17 @@ Item {
   function celebrate() { if (root.animate) celebrateAnim.restart() }
 
   readonly property var flourishes: [hopAnim, wiggleAnim, popAnim, nodAnim, lookAnim, celebrateAnim]
-  function playRandom() {
+  readonly property int flourishCount: flourishes.length
+
+  // Play a particular flourish, so a caller greeting several avatars at once
+  // can hand each of them a different one.
+  function play(index) {
     if (!root.animate) return
-    var pick = flourishes[Math.floor(Math.random() * flourishes.length)]
+    var n = flourishes.length
+    var pick = flourishes[((index % n) + n) % n]
     if (pick) pick.restart()
   }
+  function playRandom() { play(Math.floor(Math.random() * flourishes.length)) }
 
   // ---------------------------------------------------------------- render
   Canvas {
