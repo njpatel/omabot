@@ -26,9 +26,13 @@ Panel {
     return barMetrics.indexOf(v) >= 0 ? v : (v === "count" ? "count" : "avatars")
   }
   readonly property var barMetrics: ["avatars", "count", "none"]
-  function cycleBarMetric() {
+  // persist=false changes it for this session only. Writing the bar entry
+  // reloads the widget, which would throw away anything held in memory - the
+  // demo roster included - so a scripted walk through the states asks for it.
+  function cycleBarMetric(persist) {
     barMetric = barMetrics[(barMetrics.indexOf(barMetric) + 1) % barMetrics.length]
-    Quickshell.execDetached(["omarchy", "bar", "set", "njpatel.omabot", "barMetric", barMetric])
+    if (persist !== false)
+      Quickshell.execDetached(["omarchy", "bar", "set", "njpatel.omabot", "barMetric", barMetric])
   }
 
   // attention: whoever wants you first (oldest wait first, so nobody is
@@ -102,15 +106,25 @@ Panel {
       bot("p1", "Trip Planner", "Personal", "cloud", "magenta", "#FF309B", 0, false, 2600,
           "Held two flights to Lisbon for March. Neither needs paying until Friday."),
       bot("p2", "Reading Pile", "Personal", "teardrop", "brown", "#936439", 0, false, 11000,
-          "Six saved articles this week. Two are the same paper with different headlines.")
+          "Six saved articles this week. Two are the same paper with different headlines."),
+      bot("d8", "Release Notes", "Engineering", "pebble", "cyan", "#00BCA6", 0, false, 46,
+          "0.42 is tagged. Draft covers the scrolling layout and two crash fixes."),
+      bot("d9", "Inbox Triage", "Operations", "arch", "gray", "#777777", 0, false, 150,
+          "Cleared 214 overnight. Four need you: all of them are contracts."),
+      bot("d10", "Competitor Watch", "Strategy", "crystal", "blue", "#1084FE", 0, false, 700,
+          "Two pricing pages changed this week. Both moved usage under a seat minimum."),
+      bot("p3", "Home Lab", "Personal", "dome", "green", "#00C972", 0, false, 3400,
+          "The NAS finished its scrub with no errors. Backups are four days behind."),
+      bot("p4", "Recipe Box", "Personal", "bean", "orange", "#FF6700", 0, false, 20000,
+          "Saved the miso aubergine one. It wants an hour you have not had lately.")
     ]
     return {
       generated_ts: t,
       app: { running: true, version: "0.35.0", pid: 0, started_ts: ago(600), alive_ts: t, crash_seen: false },
       counts: { bots: bots.length, awaiting: 1, working: 0, unread: 2, unread_messages: 4, groups: 0 },
       sections: [
-        { id: "s1", name: "ACME", bot_ids: ["d1", "d2", "d3", "d4", "d5", "d6", "d7"] },
-        { id: "s2", name: "Personal", bot_ids: ["p1", "p2"] }
+        { id: "s1", name: "ACME", bot_ids: ["d1", "d2", "d3", "d4", "d5", "d6", "d7", "d8", "d9", "d10"] },
+        { id: "s2", name: "Personal", bot_ids: ["p1", "p2", "p3", "p4"] }
       ],
       bots: bots
     }
@@ -328,6 +342,14 @@ Panel {
     function geometry(): string {
       return JSON.stringify({ x: panel.cardOrigin.x, y: panel.cardOrigin.y, w: panel.contentWidth, h: panel.contentHeight })
     }
+    function metric(): string { root.cycleBarMetric(false); return root.barMetric }
+    // Aim the eyes at a point in the panel, in its own coordinates. The eyes
+    // follow a real pointer; this is how a recording without one drives them.
+    function look(x: int, y: int): string {
+      keyCatcher.pointerAt(x, y)
+      return x + "," + y
+    }
+    function away(): string { keyCatcher.pointerGone(); return "away" }
     function state(): string {
       return JSON.stringify({ counts: root.counts, app: root.app, bots: root.bots.length })
     }
