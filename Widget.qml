@@ -387,12 +387,23 @@ Panel {
   readonly property bool vertical: !!(bar && bar.vertical)
   readonly property var barAvatars: (!snap || !app.running || vertical || barMetric !== "avatars")
     ? [] : wanting.slice(0, maxBarAvatars)
-  readonly property real barAvatarSize: Math.round(Style.font.caption * 1.15)
+  // The glyphs beside it carry their own optical padding; a mark drawn to the
+  // full icon canvas would stand taller than all of them.
+  readonly property real markSize: Math.round(Style.bar.iconCanvas * 0.82)
+  // Same parity as the mark, so both round their centre to the same pixel -
+  // otherwise the avatars sit half a pixel below it, which reads as crooked.
+  readonly property real barAvatarSize: {
+    var h = Math.round(Style.font.caption * 1.15)
+    return (h % 2) === (markSize % 2) ? h : h + 1
+  }
 
   Row {
     id: row
     anchors.centerIn: parent
-    spacing: Style.space(4)
+    // The icon slot is wider than the mark drawn inside it, which leaves as
+    // much air after the mark as there is between whole widgets. Pull back
+    // into that padding so the mark and what follows read as one thing.
+    spacing: -Style.space(3)
 
     // The Grok Bot mark, always. Drawn rather than loaded from the app icon so
     // it takes the bar's colours like every other widget instead of dropping a
@@ -405,11 +416,9 @@ Panel {
       onPressed: function(buttonCode) { root.barPressed(buttonCode) }
       iconComponent: Component {
         Item {
-          // The glyphs beside it carry their own optical padding; a shape drawn
-          // to the full canvas would stand taller than all of them.
           Avatar {
             anchors.centerIn: parent
-            width: Math.round(parent.width * 0.82)
+            width: root.markSize
             height: width
             shape: "squircle"
             outlined: true
@@ -423,10 +432,12 @@ Panel {
       }
     }
 
-    // To its right: the bots waiting on you, as themselves.
+    // To its right: the bots waiting on you, as themselves. Centred on the
+    // button rather than on the row: the mark is centred in the button too, so
+    // sharing that reference makes both round to the same pixel.
     Row {
       id: avatars
-      anchors.verticalCenter: parent.verticalCenter
+      anchors.verticalCenter: button.verticalCenter
       spacing: Style.space(3)
       visible: root.barAvatars.length > 0
 
@@ -446,7 +457,7 @@ Panel {
     // Or, to its right: how many are waiting.
     Text {
       id: metric
-      anchors.verticalCenter: parent.verticalCenter
+      anchors.verticalCenter: button.verticalCenter
       visible: root.barText !== ""
       text: root.barText
       color: root.alarming ? root.urgent : (root.bar ? root.bar.barForeground : root.fg)
