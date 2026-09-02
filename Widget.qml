@@ -84,7 +84,6 @@ Panel {
   readonly property double staleAfterS: 7 * 24 * 3600
   function moodFor(b) {
     if (b.awaiting) return "alert"
-    if (b.working) return "working"
     if (b.unread > 0) return "peek"
     if (b.last_activity_ts && (nowMs / 1000 - b.last_activity_ts) > staleAfterS) return "sleepy"
     return "calm"
@@ -150,6 +149,36 @@ Panel {
     cursor = 0
     panelFlick.contentY = 0
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    greetTimer.everyone = false
+    greetTimer.slot = 0
+    greetTimer.restart()
+  }
+
+  function greetAll(everyone) {
+    greetTimer.everyone = !!everyone
+    greetTimer.everyone = false
+    greetTimer.slot = 0
+    greetTimer.restart()
+  }
+
+  // One flourish per bot that wants you, 90ms apart, once per opening.
+  Timer {
+    id: greetTimer
+    property int slot: 0
+    property bool everyone: false
+    interval: 90
+    repeat: true
+    running: false
+    onTriggered: {
+      var greeted = 0
+      for (var i = 0; i < repeater.count; i++) {
+        var item = repeater.itemAt(i)
+        if (!item || !(item.wantsGreeting || everyone)) continue
+        if (greeted === slot) { item.greet(); slot++; return }
+        greeted++
+      }
+      stop()
+    }
   }
 
   // Focus the Grok Bot window. The app exposes no deep link to a single bot,
@@ -163,12 +192,20 @@ Panel {
   }
 
   IpcHandler {
+    // Omarchy instantiates a bar widget more than once (a hidden copy is used
+    // for measurement), and both copies would register for the same target -
+    // the loser silently drops every call. Only the copy actually mounted in a
+    // bar takes the name, so `omarchy-shell njpatel.omabot …` reaches the one
+    // on screen.
+    enabled: root.bar !== null
     target: root.ipcTarget
     function open(): void { root.open() }
     function close(): void { root.close() }
     function toggle(): void { root.toggle() }
     function scrub(): string { root.scrub = !root.scrub; return root.scrub ? "scrubbed" : "clear" }
     function group(): string { root.toggleGrouping(); return root.groupBySection ? "sections" : "flat" }
+    // Play the greeting on demand: every bot, whether or not it has news.
+    function greet(): string { root.greetAll(true); return root.opened ? "greeting" : "panel is closed" }
     function geometry(): string {
       return JSON.stringify({ x: panel.cardOrigin.x, y: panel.cardOrigin.y, w: panel.contentWidth, h: panel.contentHeight })
     }
@@ -240,6 +277,16 @@ Panel {
   implicitWidth: row.implicitWidth
   implicitHeight: bar ? bar.barSize : Style.bar.sizeHorizontal
   readonly property real openPanelIndicatorWidth: row.width
+
+  // What the bar actually draws. "none" means the icon alone, like the other
+  // widgets - never an empty slot, which would leave nothing to click and no
+  // way back to the panel.
+  readonly property bool vertical: !!(bar && bar.vertical)
+  readonly property var barAvatars: (!snap || !app.running || vertical || barMetric === "none")
+    ? [] : wanting.slice(0, maxBarAvatars)
+  readonly property bool showIdleAvatar: !!snap && !!app.running && !vertical
+    && barMetric !== "none" && wanting.length === 0 && bots.length > 0
+  readonly property bool showIcon: barAvatars.length === 0 && !showIdleAvatar
   readonly property real barAvatarSize: Math.round(Style.font.caption * 1.15)
 
   Row {
@@ -253,10 +300,10 @@ Panel {
       id: avatars
       anchors.verticalCenter: parent.verticalCenter
       spacing: Style.space(3)
-      visible: !(root.bar && root.bar.vertical) && root.snap && root.app.running
+      visible: root.barAvatars.length > 0 || root.showIdleAvatar
 
       Repeater {
-        model: root.barMetric === "none" ? [] : root.wanting.slice(0, root.maxBarAvatars)
+        model: root.barAvatars
         Avatar {
           width: root.barAvatarSize
           height: root.barAvatarSize
@@ -269,7 +316,7 @@ Panel {
 
       // Idle: a single calm bot so the widget still shows what it is.
       Avatar {
-        visible: root.wanting.length === 0 && root.bots.length > 0
+        visible: root.showIdleAvatar
         width: root.barAvatarSize
         height: root.barAvatarSize
         shape: root.bots.length > 0 ? root.bots[0].shape : "blob"
@@ -283,7 +330,7 @@ Panel {
     // Fallback glyph while the watcher starts or the app is closed.
     BarIconButton {
       id: button
-      visible: !avatars.visible || (!root.snap || !root.app.running)
+      visible: root.showIcon
       bar: root.bar
       text: "\u{f06a9}"
       onPressed: function(buttonCode) { root.barPressed(buttonCode) }
@@ -404,10 +451,16 @@ Panel {
             model: root.rows
 
             Item {
+              id: rowItem
               required property var modelData
               required property int index
               width: column.width
               height: modelData.kind === "section" ? Style.space(26) : Style.space(46)
+
+              // Bots with news get greeted when the panel opens.
+              readonly property bool wantsGreeting: modelData.kind === "bot"
+                && (modelData.bot.unread > 0 || modelData.bot.awaiting)
+              function greet() { if (rowAvatar) rowAvatar.playRandom() }
 
               // section header
               Text {
