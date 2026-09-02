@@ -19,8 +19,13 @@ Panel {
   manageIpc: false
 
   // ---------------------------------------------------------------- settings
-  property string barMetric: String(setting("barMetric", "attention"))
-  readonly property var barMetrics: ["attention", "all", "count", "none"]
+  // The logo is always in the bar. This is only what sits beside it:
+  // the bots that want you, drawn as themselves; how many there are; or nothing.
+  property string barMetric: {
+    var v = String(setting("barMetric", "avatars"))
+    return barMetrics.indexOf(v) >= 0 ? v : (v === "count" ? "count" : "avatars")
+  }
+  readonly property var barMetrics: ["avatars", "count", "none"]
   function cycleBarMetric() {
     barMetric = barMetrics[(barMetrics.indexOf(barMetric) + 1) % barMetrics.length]
     Quickshell.execDetached(["omarchy", "bar", "set", "njpatel.omabot", "barMetric", barMetric])
@@ -357,16 +362,12 @@ Panel {
   }
 
   // ---------------------------------------------------------------- bar
+  // In count mode: how many bots want you. Nothing when nobody does, so the
+  // bar stays quiet; in avatars mode the faces say it instead.
+  readonly property int wantingCount: wanting.length
   readonly property string barText: {
-    if (!snap || barMetric === "none") return ""
-    var c = counts
-    if (barMetric === "count") return String(c.bots || 0)
-    var parts = []
-    if ((c.awaiting || 0) > 0) parts.push("!" + c.awaiting)
-    if ((c.unread_messages || 0) > 0) parts.push(String(c.unread_messages))
-    if (parts.length === 0 && (c.working || 0) > 0) parts.push("…")
-    if (barMetric === "all" && parts.length === 0 && (c.bots || 0) > 0) parts.push(String(c.bots))
-    return parts.join(" ")
+    if (!snap || vertical || barMetric !== "count") return ""
+    return wantingCount > 0 ? String(wantingCount) : ""
   }
   readonly property string barTooltip: {
     if (!snap) return "Omabot"
@@ -381,15 +382,11 @@ Panel {
   implicitHeight: bar ? bar.barSize : Style.bar.sizeHorizontal
   readonly property real openPanelIndicatorWidth: row.width
 
-  // What the bar actually draws. "none" means the icon alone, like the other
-  // widgets - never an empty slot, which would leave nothing to click and no
-  // way back to the panel.
+  // What the bar draws beside the logo. Nothing waiting means nothing beside
+  // it - the logo alone is still the widget, and still opens the panel.
   readonly property bool vertical: !!(bar && bar.vertical)
-  readonly property var barAvatars: (!snap || !app.running || vertical || barMetric === "none")
+  readonly property var barAvatars: (!snap || !app.running || vertical || barMetric !== "avatars")
     ? [] : wanting.slice(0, maxBarAvatars)
-  readonly property bool showIdleAvatar: !!snap && !!app.running && !vertical
-    && barMetric !== "none" && wanting.length === 0 && bots.length > 0
-  readonly property bool showIcon: barAvatars.length === 0 && !showIdleAvatar
   readonly property real barAvatarSize: Math.round(Style.font.caption * 1.15)
 
   Row {
@@ -397,13 +394,32 @@ Panel {
     anchors.centerIn: parent
     spacing: Style.space(4)
 
-    // The bots that want you, as their own avatars. Nothing to say: one calm
-    // avatar of the most recent bot, or the fallback glyph when idle.
+    // The Grok Bot mark, always. Drawn rather than loaded from the app icon so
+    // it takes the bar's colours like every other widget instead of dropping a
+    // dark tile into the theme. Dimmed when the app is not running.
+    BarIconButton {
+      id: button
+      bar: root.bar
+      text: "\u{f06a9}"
+      onPressed: function(buttonCode) { root.barPressed(buttonCode) }
+      iconComponent: Component {
+        Avatar {
+          shape: "squircle"
+          fill: root.bar ? root.bar.barForeground : root.fg
+          cutoutEyes: true
+          face: "neutral"
+          opacity: root.app.running ? 1.0 : 0.45
+          Behavior on opacity { NumberAnimation { duration: 220 } }
+        }
+      }
+    }
+
+    // To its right: the bots waiting on you, as themselves.
     Row {
       id: avatars
       anchors.verticalCenter: parent.verticalCenter
       spacing: Style.space(3)
-      visible: root.barAvatars.length > 0 || root.showIdleAvatar
+      visible: root.barAvatars.length > 0
 
       Repeater {
         model: root.barAvatars
@@ -416,33 +432,13 @@ Panel {
           face: root.faceFor(modelData)
         }
       }
-
-      // Idle: a single calm bot so the widget still shows what it is.
-      Avatar {
-        visible: root.showIdleAvatar
-        width: root.barAvatarSize
-        height: root.barAvatarSize
-        shape: root.bots.length > 0 ? root.bots[0].shape : "blob"
-        fill: root.bots.length > 0 ? Qt.rgba(root.colorFor(root.bots[0]).r, root.colorFor(root.bots[0]).g,
-                                             root.colorFor(root.bots[0]).b, 0.55) : root.dim
-        eyeColor: root.eyeInk
-        face: "neutral"
-      }
     }
 
-    // Fallback glyph while the watcher starts or the app is closed.
-    BarIconButton {
-      id: button
-      visible: root.showIcon
-      bar: root.bar
-      text: "\u{f06a9}"
-      onPressed: function(buttonCode) { root.barPressed(buttonCode) }
-    }
-
+    // Or, to its right: how many are waiting.
     Text {
       id: metric
       anchors.verticalCenter: parent.verticalCenter
-      visible: !(root.bar && root.bar.vertical) && root.barText !== ""
+      visible: root.barText !== ""
       text: root.barText
       color: root.alarming ? root.urgent : (root.bar ? root.bar.barForeground : root.fg)
       font.family: root.fontFamily
@@ -775,7 +771,7 @@ Panel {
             Text {
               anchors.verticalCenter: parent.verticalCenter
               text: "j/k move · ⏎ open app · g " + root.ordering
-                    + " · h hide · r bar " + root.barMetric
+                    + " · h hide · r beside logo: " + root.barMetric
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption

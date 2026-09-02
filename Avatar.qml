@@ -16,6 +16,10 @@ Item {
   property string shape: "squircle"
   property color fill: "#777777"
   property color eyeColor: "#111111"
+  // Punch the eyes through the shape instead of painting them. The logo in the
+  // bar is a single flat colour, so its eyes have to be holes to read at all -
+  // whatever is behind the bar shows through, in any theme.
+  property bool cutoutEyes: false
   property bool animate: true
 
   // Which face to wear. The cheerful half of the studio's set: it also ships
@@ -268,7 +272,9 @@ Item {
     if (s < 9) return
     var r = s * 0.5
     var eyes = eyePlacement(r * 0.92, pose[3])
-    ctx.fillStyle = root.eyeColor
+    ctx.save()
+    if (root.cutoutEyes) ctx.globalCompositeOperation = "destination-out"
+    ctx.fillStyle = root.cutoutEyes ? "#000000" : root.eyeColor
     for (var i = 0; i < 2; i++) {
       var e = eyes[i]
       if (e.depth < -0.1) continue                 // round the back of the head
@@ -288,6 +294,7 @@ Item {
       ctx.fill()
       ctx.restore()
     }
+    ctx.restore()
   }
 
   // ---------------------------------------------------------------- shapes

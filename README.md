@@ -15,7 +15,9 @@ Nothing to configure. Omabot reads the state Grok Bot already keeps on disk; it 
 
 ## Use
 
-Bots that want you appear in the bar as themselves: the shape and colour they have in the app, followed by the count of unread messages. Nothing there means nothing needs you. Click to open the panel, or right-click to jump straight to the app.
+The Grok Bot mark always sits in the bar, so the widget never disappears on you - dimmed when the app is not running. Beside it, to its right, are the bots that want you, drawn as themselves: the shape and colour they have in the app. Nothing beside the mark means nothing needs you. Click to open the panel, or right-click to jump straight to the app.
+
+If you would rather have a number than faces, `barMetric count` puts the count of waiting bots there instead, and `none` leaves the mark on its own.
 
 Expressions carry the state, so you can read the bar out of the corner of your eye:
 
@@ -42,7 +44,7 @@ The panel lists every bot, grouped by the channels you set up in Grok Bot, with 
 | `Enter` / click | open Grok Bot |
 | `g` | group by channel / flat, most urgent first |
 | `h` | redact names and messages |
-| `r` | cycle what the bar shows: attention, all, count, none |
+| `r` | cycle what sits beside the mark: avatars, count, none |
 
 Settings live on the bar entry: `omarchy bar set njpatel.omabot barMetric count` (or `groupBySection`, `maxBarAvatars`).
 

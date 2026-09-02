@@ -27,7 +27,7 @@
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
-      "barMetric": "attention",
+      "barMetric": "avatars",
       "groupBySection": "true",
       "maxBarAvatars": 3,
       "ordering": "attention"
@@ -36,15 +36,14 @@
       {
         "key": "barMetric",
         "type": "enum",
-        "label": "What the bar shows",
+        "label": "What sits beside the logo",
         "options": [
-          "attention",
-          "all",
+          "avatars",
           "count",
           "none"
         ],
-        "defaultValue": "attention",
-        "description": "attention = avatars of bots waiting on you or with unread messages, plus their counts; all = also the bot count when nothing needs you; count = the number of bots only; none = no avatars."
+        "defaultValue": "avatars",
+        "description": "The Grok Bot logo is always shown. To its right: avatars = the bots waiting on you, as themselves; count = how many are waiting; none = the logo alone."
       },
       {
         "key": "ordering",
