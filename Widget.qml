@@ -390,6 +390,9 @@ Panel {
   // The glyphs beside it carry their own optical padding; a mark drawn to the
   // full icon canvas would stand taller than all of them.
   readonly property real markSize: Math.round(Style.bar.iconCanvas * 0.82)
+  // How far the row pulls back into the icon slot's padding, to bring what
+  // follows the mark close enough to read as part of it.
+  readonly property real barPull: Style.space(3)
   // Same parity as the mark, so both round their centre to the same pixel -
   // otherwise the avatars sit half a pixel below it, which reads as crooked.
   readonly property real barAvatarSize: {
@@ -403,7 +406,7 @@ Panel {
     // The icon slot is wider than the mark drawn inside it, which leaves as
     // much air after the mark as there is between whole widgets. Pull back
     // into that padding so the mark and what follows read as one thing.
-    spacing: -Style.space(3)
+    spacing: -root.barPull
 
     // The Grok Bot mark, always. Drawn rather than loaded from the app icon so
     // it takes the bar's colours like every other widget instead of dropping a
@@ -463,6 +466,16 @@ Panel {
       color: root.alarming ? root.urgent : (root.bar ? root.bar.barForeground : root.fg)
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
+    }
+
+    // Close the widget with as much air as the icon slot opens it with, so
+    // whatever is beside the mark is not left flush against the next widget.
+    // The pull-back applies here too, so add it back or the tail comes up
+    // short of the head.
+    Item {
+      height: 1
+      width: (avatars.visible || metric.visible)
+        ? Math.round((button.width - root.markSize) / 2) + root.barPull : 0
     }
   }
 
