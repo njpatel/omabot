@@ -19,6 +19,8 @@ The Grok Bot mark always sits in the bar, so the widget never disappears on you 
 
 If you would rather have a number than faces, `barMetric count` puts the count of waiting bots there instead, and `none` leaves the mark on its own.
 
+Bring the pointer to the bar and they look up at you, one after another, before the panel is even open.
+
 Expressions carry the state, so you can read the bar out of the corner of your eye:
 
 | | |

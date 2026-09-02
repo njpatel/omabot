@@ -61,6 +61,7 @@ Panel {
   readonly property color accent: Color.accent
   readonly property color dim: Qt.rgba(fg.r, fg.g, fg.b, 0.45)
   readonly property color faint: Qt.rgba(fg.r, fg.g, fg.b, 0.20)
+  readonly property color divider: Qt.rgba(fg.r, fg.g, fg.b, 0.34)
   readonly property color hilite: Qt.rgba(fg.r, fg.g, fg.b, 0.09)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property color eyeInk: Color.background
@@ -237,6 +238,11 @@ Panel {
   // so there is no central loop to fall out of step with the list.
   signal greetRequested(bool everyone)
 
+  // The bar's own avatars look up when the pointer arrives, before the panel
+  // is even open. Same shape as the panel's greeting: each one hears the
+  // signal and owns its own timing.
+  signal barGreeted()
+
   Timer {
     id: greetOnOpen
     interval: 260
@@ -312,6 +318,7 @@ Panel {
     function greet(): string {
       if (!root.opened) root.open()
       root.requestGreeting(true)
+      root.barGreeted()
       return "greeting"
     }
     function geometry(): string {
@@ -447,12 +454,28 @@ Panel {
       Repeater {
         model: root.barAvatars
         Avatar {
+          id: barAvatar
+          required property var modelData
+          required property int index
           width: root.barAvatarSize
           height: root.barAvatarSize
           shape: modelData.shape
           fill: root.colorFor(modelData)
           eyeColor: root.eyeInk
           face: root.faceFor(modelData)
+
+          // Look up when you come to open the panel. Each one waits a little
+          // longer than the last, so it ripples along the row instead of
+          // firing as one block.
+          Connections {
+            target: root
+            function onBarGreeted() { greet.restart() }
+          }
+          Timer {
+            id: greet
+            interval: 30 + barAvatar.index * 90
+            onTriggered: barAvatar.play(root.nextFlourish())
+          }
         }
       }
     }
@@ -485,7 +508,10 @@ Panel {
     cursorShape: Qt.PointingHandCursor
     acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
     onClicked: function(mouse) { root.barPressed(mouse.button) }
-    onEntered: if (root.bar) root.bar.showTooltip(row, root.barTooltip)
+    onEntered: {
+      if (root.bar) root.bar.showTooltip(row, root.barTooltip)
+      root.barGreeted()
+    }
     onExited: if (root.bar) root.bar.hideTooltip(row)
   }
 
@@ -625,13 +651,15 @@ Panel {
               height: modelData.kind === "section" ? Style.space(26)
                     : modelData.kind === "rule" ? Style.space(13) : Style.space(46)
 
-              // The break between "wants you" and everyone else.
+              // The break between "wants you" and everyone else. At the same
+              // weight as the section rules it was too quiet to do its job -
+              // this is the one division in the list that carries meaning.
               Rectangle {
                 visible: modelData.kind === "rule"
                 anchors.verticalCenter: parent.verticalCenter
                 width: parent.width
                 height: 1
-                color: root.faint
+                color: root.divider
               }
 
               // Bots with news get greeted when the panel opens.
@@ -670,7 +698,7 @@ Panel {
                 anchors.fill: parent
                 anchors.leftMargin: -Style.space(4)
                 anchors.rightMargin: -Style.space(4)
-                radius: Style.space(3)
+                radius: Style.space(1.5)
                 color: index === root.cursor ? root.hilite : "transparent"
 
                 Row {
