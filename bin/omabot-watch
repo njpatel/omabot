@@ -5,6 +5,7 @@
 #   cache   ~/.local/state/omarchy/omabot/avatars/<version>.png for bots that
 #           wear a picture instead of a shape
 #   args    --interval N   seconds between checks (default 2)
+#           --focus        raise Grok Bot (or launch it); used by the widget
 #
 # Grok Bot keeps its client state in ~/.config/Grok Bot/sand-client-persistence
 # as blobs whose filenames are base32 of the state key, rewritten whenever
@@ -14,6 +15,8 @@
 import base64
 import json
 import os
+import re
+import subprocess
 import sys
 import time
 
@@ -24,6 +27,11 @@ MARKER = os.path.join(STATE, "sand-session-marker.json")
 # URLs in one blob; QML wants files, and a 200KB string per bot has no business
 # going through a JSON line every couple of seconds.
 CACHE = os.path.expanduser("~/.local/state/omarchy/omabot/avatars")
+# Grok Bot's data URL is untrusted local JSON. Cap decode size and require a
+# single path component so a hostile version cannot write outside CACHE.
+MAX_AVATAR_BYTES = 2 * 1024 * 1024
+_AVATAR_VERSION_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+_WINDOW_ADDR_RE = re.compile(r"^0x[0-9a-fA-F]{1,16}$")
 
 # Avatar palette, lifted from the app bundle so the widget matches it exactly.
 COLORS = {
@@ -117,6 +125,30 @@ def working_state(index, bot_id, now):
 _avatars = (None, {})
 
 
+def _avatar_filename(version, ext):
+    """Return a CACHE-relative name, or None if version/ext cannot be trusted."""
+    name = str(version)
+    if name in (".", "..") or ".." in name or not _AVATAR_VERSION_RE.fullmatch(name):
+        return None
+    if ext not in ("png", "jpg", "img"):
+        return None
+    return "%s.%s" % (name, ext)
+
+
+def _ensure_cache():
+    os.makedirs(CACHE, mode=0o700, exist_ok=True)
+    try:
+        os.chmod(CACHE, 0o700)
+    except OSError:
+        pass
+
+
+def _in_cache(path):
+    cache = os.path.abspath(CACHE)
+    dest = os.path.abspath(path)
+    return os.path.dirname(dest) == cache
+
+
 def avatars(index):
     """bot id -> path of its decoded avatar image."""
     global _avatars
@@ -136,30 +168,51 @@ def avatars(index):
             entries = json.load(f).get("value", {}).get("entries") or []
     except (OSError, ValueError):
         entries = []
-    os.makedirs(CACHE, exist_ok=True)
+    _ensure_cache()
     for e in entries:
         bot_id, version, url = e.get("id"), e.get("version"), e.get("dataUrl") or ""
         if not bot_id or not version or "," not in url:
             continue
         head, b64 = url.split(",", 1)
         ext = "png" if "png" in head else ("jpg" if "jpeg" in head or "jpg" in head else "img")
-        dest = os.path.join(CACHE, "%s.%s" % (version, ext))
+        filename = _avatar_filename(version, ext)
+        if not filename:
+            continue
+        dest = os.path.join(CACHE, filename)
+        if not _in_cache(dest):
+            continue
         if not os.path.exists(dest):
             try:
+                b64 = "".join(b64.split())
+                if len(b64) > MAX_AVATAR_BYTES * 4 // 3 + 64:
+                    continue
+                raw = base64.b64decode(b64, validate=True)
+                if not raw or len(raw) > MAX_AVATAR_BYTES:
+                    continue
                 tmp = dest + ".part"
+                if not _in_cache(tmp):
+                    continue
                 with open(tmp, "wb") as f:
-                    f.write(base64.b64decode(b64))
+                    f.write(raw)
                 os.replace(tmp, dest)
             except (OSError, ValueError):
                 continue
         out[bot_id] = dest
     # Drop pictures nobody wears any more, so changing an avatar twice does not
-    # leave two dead files behind.
+    # leave two dead files behind. Only unlink regular files we would have
+    # written (legal avatar names, or leftover *.part temps).
     keep = set(os.path.basename(p) for p in out.values())
     try:
         for name in os.listdir(CACHE):
-            if name not in keep:
-                os.remove(os.path.join(CACHE, name))
+            if name in keep:
+                continue
+            victim = os.path.join(CACHE, name)
+            if not _in_cache(victim) or not os.path.isfile(victim) or os.path.islink(victim):
+                continue
+            stem_ext = name.rsplit(".", 1)
+            legal = len(stem_ext) == 2 and _avatar_filename(stem_ext[0], stem_ext[1])
+            if legal or name.endswith(".part"):
+                os.remove(victim)
     except OSError:
         pass
     _avatars = (mtime, out)
@@ -250,8 +303,49 @@ def snapshot(index):
             "sections": grouped, "bots": bots}
 
 
+def _run(argv, timeout=2):
+    try:
+        return subprocess.run(argv, capture_output=True, text=True, timeout=timeout, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def focus_app():
+    """Raise the Grok Bot window, or launch the app. Never goes through a shell."""
+    addr = ""
+    proc = _run(["hyprctl", "clients", "-j"])
+    if proc and proc.stdout:
+        try:
+            clients = json.loads(proc.stdout)
+        except ValueError:
+            clients = []
+        if isinstance(clients, list):
+            for c in clients:
+                if not isinstance(c, dict) or c.get("class") != "grok-bot":
+                    continue
+                cand = str(c.get("address") or "")
+                if _WINDOW_ADDR_RE.fullmatch(cand):
+                    addr = cand
+                    break
+    if addr:
+        target = "address:" + addr
+        # Omarchy's Lua dispatcher first; classic Hyprland focuswindow as fallback.
+        lua = 'hl.dsp.focus({ window = "%s" })' % target
+        r = _run(["hyprctl", "dispatch", lua])
+        if r is None or r.returncode != 0:
+            _run(["hyprctl", "dispatch", "focuswindow", target])
+        return
+    try:
+        subprocess.Popen(["uwsm-app", "--", "gtk-launch", "grok-bot"], start_new_session=True)
+    except OSError:
+        pass
+
+
 def main():
     args = sys.argv[1:]
+    if "--focus" in args:
+        focus_app()
+        return
     interval = 2.0
     if "--interval" in args:
         try:

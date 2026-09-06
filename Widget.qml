@@ -302,10 +302,7 @@ Panel {
   // Focus the Grok Bot window. The app exposes no deep link to a single bot,
   // so this raises the app and leaves the choosing to you.
   function focusApp() {
-    Quickshell.execDetached(["bash", "-c",
-      "addr=$(hyprctl clients -j | python3 -c \"import sys,json;w=[c['address'] for c in json.load(sys.stdin) if c['class']=='grok-bot'];print(w[0] if w else '')\"); " +
-      "if [ -n \"$addr\" ]; then hyprctl dispatch \"hl.dsp.focus({ window = \\\"address:$addr\\\" })\" || hyprctl dispatch focuswindow \"address:$addr\"; " +
-      "else uwsm-app -- gtk-launch grok-bot; fi"])
+    Quickshell.execDetached([root.watcher, "--focus"])
     root.close()
   }
 
@@ -510,6 +507,7 @@ Panel {
     // Or, to its right: how many are waiting.
     Text {
       id: metric
+      textFormat: Text.PlainText
       anchors.verticalCenter: button.verticalCenter
       visible: root.barText !== ""
       text: root.barText
@@ -636,6 +634,7 @@ Panel {
               width: parent.width
               spacing: Style.space(2)
               Text {
+                textFormat: Text.PlainText
                 text: {
                   if (root.demoMode) return "GROK BOT · demo roster"
                   if (!root.snap) return "starting…"
@@ -647,6 +646,7 @@ Panel {
                 font.pixelSize: Style.font.caption
               }
               Text {
+                textFormat: Text.PlainText
                 visible: root.snap && root.app.running
                 text: {
                   var c = root.counts
@@ -710,6 +710,7 @@ Panel {
 
               // section header
               Text {
+                textFormat: Text.PlainText
                 visible: modelData.kind === "section"
                 anchors.left: parent.left
                 anchors.bottom: parent.bottom
@@ -776,7 +777,10 @@ Panel {
                     Row {
                       spacing: Style.space(5)
                       width: parent.width
+                      // Roster strings are untrusted. AutoText would treat
+                      // "<img src=...>" in a last message as a network fetch.
                       Text {
+                        textFormat: Text.PlainText
                         text: modelData.kind === "bot" ? root.label(modelData.bot.name) : ""
                         color: modelData.kind === "bot" && modelData.bot.focused ? root.accent : root.fg
                         font.family: root.fontFamily
@@ -784,6 +788,7 @@ Panel {
                         font.bold: modelData.kind === "bot" && (modelData.bot.awaiting || modelData.bot.unread > 0)
                       }
                       Text {
+                        textFormat: Text.PlainText
                         text: modelData.kind === "bot"
                           ? (modelData.bot.is_group ? "group of " + modelData.bot.members
                                                     : root.label(modelData.bot.title))
@@ -797,6 +802,7 @@ Panel {
                     }
 
                     Text {
+                      textFormat: Text.PlainText
                       width: parent.width
                       text: modelData.kind === "bot"
                         ? (modelData.bot.working ? "thinking…" : root.label(modelData.bot.last_text))
@@ -819,6 +825,7 @@ Panel {
                     spacing: Style.space(2)
 
                     Text {
+                      textFormat: Text.PlainText
                       anchors.right: parent.right
                       text: modelData.kind === "bot" ? root.fmtAgo(modelData.bot.last_activity_ts) : ""
                       color: root.dim
@@ -834,6 +841,7 @@ Panel {
                       color: root.accent
                       Text {
                         id: unreadText
+                        textFormat: Text.PlainText
                         anchors.centerIn: parent
                         text: modelData.kind === "bot" ? String(modelData.bot.unread) : ""
                         color: Color.background
@@ -869,6 +877,7 @@ Panel {
 
           // ---- empty states
           Text {
+            textFormat: Text.PlainText
             visible: root.snap && root.bots.length === 0
             width: parent.width
             topPadding: Style.space(10)
@@ -885,6 +894,7 @@ Panel {
             width: parent.width
             height: Style.space(30)
             Text {
+              textFormat: Text.PlainText
               anchors.verticalCenter: parent.verticalCenter
               text: "j/k move · ⏎ open app · g " + root.ordering
                     + " · h hide · r beside logo: " + root.barMetric
