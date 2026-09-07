@@ -1,5 +1,12 @@
 # Working on omabot
 
+> Not called `AGENTS.md`, and not at the repository root, on purpose. Omarchy
+> installs a plugin's whole tree into `~/.config/omarchy/plugins/`, so a root
+> agent-instruction file would become ambient context for any coding agent the
+> *installing user* happens to run — instructions they never chose to load.
+> Marketplace review raised this on omapager; the same reasoning applies here.
+> If you keep a `CLAUDE.md` symlink to this file locally, leave it untracked.
+
 Your Grok Bot roster in the Omarchy bar. It reads state the Grok Bot desktop
 app already keeps on disk and renders each bot as itself — the shape and colour
 the app gives it, or the picture you set — wearing a face for what it wants
