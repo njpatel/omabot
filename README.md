@@ -89,6 +89,10 @@ Grok Bot keeps its client state in `~/.config/Grok Bot/sand-client-persistence`,
 
 None of that is a documented contract - the roster is at `schemaVersion` 4 - so every field is read defensively, and an unfamiliar shape degrades to an empty roster rather than a broken bar. If a Grok Bot update moves things, `bin/omabot-watch` is the file to fix.
 
+## Contributing
+
+See [Working on omabot](docs/DEVELOPING.md) for development notes and [how we review contributions](docs/DEVELOPING.md#how-we-review-contributions).
+
 ## License
 
 Apache-2.0
