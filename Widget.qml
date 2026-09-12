@@ -52,6 +52,10 @@ Panel {
   }
 
   readonly property int maxBarAvatars: Math.max(1, Math.min(6, Number(setting("maxBarAvatars", 3))))
+  property bool richNotifications: String(setting("richNotifications", "false")) === "true"
+  // One visible bar copy sends; measurement and additional screens stay silent.
+  readonly property bool notificationOwner: bar !== null && QsWindow.window !== null
+    && QsWindow.window.screen === Quickshell.screens[0]
   readonly property string watcher: Qt.resolvedUrl("bin/omabot-watch").toString().replace(/^file:\/\//, "")
 
   function setting(name, fallback) {
@@ -86,7 +90,8 @@ Panel {
       return { id: id, name: name, title: title, description: "", shape: shape, color: color,
                hex: hex, is_group: false, members: 0, unread: unread, awaiting: awaiting,
                working: false, working_since_ts: 0, muted: false, last_text: text,
-               last_activity_ts: ago(mins), last_viewed_ts: ago(mins), focused: false, pinned: false }
+               last_activity_ts: ago(mins), last_viewed_ts: ago(mins), focused: false, pinned: false,
+               awaiting_reason: awaiting ? "Approval needed before changing your calendar." : "", message_id: id + "-demo" }
     }
     var bots = [
       bot("d1", "Chief of Staff", "Operations", "squircle", "red", "#FF263C", 0, true, 34,
@@ -228,10 +233,91 @@ Panel {
   }
   Timer { id: restartTimer; interval: 5000; onTriggered: watcherProc.running = true }
 
+  // Opt-in: Grok Bot also sends its own alerts. A first snapshot is a baseline,
+  // never a backlog to replay, and muted/open/scrubbed views consume changes silently.
+  property var notificationQueue: []
+  property int notificationsSent: 0
+  property string notificationAction: ""
+
+  function escapedNotificationText(value, limit) {
+    return String(value || "").slice(0, limit)
+      .replace(/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, " ")
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  }
+
+  function queueNotification(bot, status, demo) {
+    if (!notificationOwner || scrub || (!demo && (!richNotifications || opened || demoMode))) return
+    if (notificationQueue.length >= 8) return
+    var body = "<b>" + status + "</b>"
+    if (bot.title) body += " · " + escapedNotificationText(bot.title, 100)
+    if (bot.awaiting_reason) body += "\n" + escapedNotificationText(bot.awaiting_reason, 320)
+    if (bot.last_text && bot.last_text !== bot.awaiting_reason)
+      body += "\n" + escapedNotificationText(bot.last_text, 160)
+    notificationQueue = notificationQueue.concat([{
+      summary: String(bot.name || "Grok Bot").slice(0, 100).replace(/[<>\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, " "),
+      body: body, demo: !!demo
+    }])
+    sendNextNotification()
+  }
+
+  function sendNextNotification() {
+    if (notificationProc.running || notificationQueue.length === 0) return
+    var next = notificationQueue[0]
+    notificationQueue = notificationQueue.slice(1)
+    if (!notificationOwner || scrub || (!next.demo && (!richNotifications || opened || demoMode))) {
+      notificationQueue = []
+      return
+    }
+    notificationAction = ""
+    // A live default action opens our roster, never a persisted executable or
+    // a command supplied by a bot. The fixed icon cannot become a remote URL.
+    notificationProc.command = ["/usr/bin/timeout", "-k", "1", "30", "/usr/bin/notify-send",
+      "--app-name=Omabot", "--icon=grok-bot", "--urgency=normal", "--expire-time=12000",
+      "--transient", "--action=default=Open roster", "--", next.summary, next.body]
+    notificationProc.running = true
+  }
+
+  Process {
+    id: notificationProc
+    stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) { root.notificationAction = (root.notificationAction + chunk).slice(0, 32) }
+    }
+    onExited: function(code) {
+      if (code === 0) {
+        root.notificationsSent += 1
+        if (root.notificationAction.trim() === "default") root.open()
+      } else console.warn("omabot", "notification sender exited", code)
+      Qt.callLater(root.sendNextNotification)
+    }
+  }
+
+  function notifyChanges(previous, current) {
+    if (!previous || !previous.app || !previous.app.running || !current.app || !current.app.running) return
+    var old = Object.create(null)
+    var before = previous.bots || []
+    for (var i = 0; i < before.length; i++) old[before[i].id] = before[i]
+    var after = current.bots || []
+    for (var j = 0; j < after.length; j++) {
+      var bot = after[j], prior = old[bot.id]
+      if (!prior || bot.muted) continue
+      if (bot.awaiting && (!prior.awaiting || bot.awaiting_reason !== prior.awaiting_reason)) {
+        queueNotification(bot, "Needs your input", false)
+      } else if (!bot.awaiting && bot.unread > 0 &&
+                 (bot.message_id ? bot.message_id !== prior.message_id : bot.last_activity_ts > prior.last_activity_ts)) {
+        queueNotification(bot, "New reply", false)
+      }
+    }
+  }
+
   function parseState(text) {
     try {
       var parsed = JSON.parse(String(text || ""))
-      if (parsed && typeof parsed === "object") { root.liveSnap = parsed; root.nowMs = Date.now() }
+      if (parsed && typeof parsed === "object" && Array.isArray(parsed.bots)) {
+        notifyChanges(root.liveSnap, parsed)
+        root.liveSnap = parsed
+        root.nowMs = Date.now()
+      }
     } catch (e) {
       console.warn("omabot", "bad state line", e)
     }
@@ -329,6 +415,12 @@ Panel {
       if (root.demoMode && !root.opened) root.open()
       return root.demoMode ? "demo roster" : "live roster"
     }
+    function demoNotification(): string {
+      if (!root.demoMode) return "Enable demo first"
+      root.close()
+      root.queueNotification(root.demoSnap.bots[0], "Needs your input", true)
+      return "Demo notification; click it to open the roster"
+    }
     // Play the greeting on demand: every bot, whether or not it has news.
     // Opens the panel first, because a panel loses focus - and closes - the
     // moment you type the command in a terminal.
@@ -351,7 +443,10 @@ Panel {
     }
     function away(): string { keyCatcher.pointerGone(); return "away" }
     function state(): string {
-      return JSON.stringify({ counts: root.counts, app: root.app, bots: root.bots.length })
+      return JSON.stringify({ counts: root.counts, app: root.app, bots: root.bots.length,
+        notificationOwner: root.notificationOwner, richNotifications: root.richNotifications,
+        notificationActive: notificationProc.running, queuedNotifications: root.notificationQueue.length,
+        notificationsSent: root.notificationsSent })
     }
   }
 
@@ -509,6 +604,7 @@ Panel {
 
     // Or, to its right: how many are waiting.
     Text {
+      textFormat: Text.PlainText
       id: metric
       anchors.verticalCenter: button.verticalCenter
       visible: root.barText !== ""
@@ -636,6 +732,7 @@ Panel {
               width: parent.width
               spacing: Style.space(2)
               Text {
+                textFormat: Text.PlainText
                 text: {
                   if (root.demoMode) return "GROK BOT · demo roster"
                   if (!root.snap) return "starting…"
@@ -647,6 +744,7 @@ Panel {
                 font.pixelSize: Style.font.caption
               }
               Text {
+                textFormat: Text.PlainText
                 visible: root.snap && root.app.running
                 text: {
                   var c = root.counts
@@ -710,6 +808,7 @@ Panel {
 
               // section header
               Text {
+                textFormat: Text.PlainText
                 visible: modelData.kind === "section"
                 anchors.left: parent.left
                 anchors.bottom: parent.bottom
@@ -777,6 +876,7 @@ Panel {
                       spacing: Style.space(5)
                       width: parent.width
                       Text {
+                        textFormat: Text.PlainText
                         text: modelData.kind === "bot" ? root.label(modelData.bot.name) : ""
                         color: modelData.kind === "bot" && modelData.bot.focused ? root.accent : root.fg
                         font.family: root.fontFamily
@@ -784,6 +884,7 @@ Panel {
                         font.bold: modelData.kind === "bot" && (modelData.bot.awaiting || modelData.bot.unread > 0)
                       }
                       Text {
+                        textFormat: Text.PlainText
                         text: modelData.kind === "bot"
                           ? (modelData.bot.is_group ? "group of " + modelData.bot.members
                                                     : root.label(modelData.bot.title))
@@ -797,9 +898,11 @@ Panel {
                     }
 
                     Text {
+                      textFormat: Text.PlainText
                       width: parent.width
                       text: modelData.kind === "bot"
-                        ? (modelData.bot.working ? "thinking…" : root.label(modelData.bot.last_text))
+                        ? (modelData.bot.awaiting && modelData.bot.awaiting_reason ? root.label(modelData.bot.awaiting_reason)
+                           : (modelData.bot.working ? "thinking…" : root.label(modelData.bot.last_text)))
                         : ""
                       // Full foreground for the ones waiting on you, dimmed for
                       // the rest: weight carries it, so nothing has to shout.
@@ -819,6 +922,7 @@ Panel {
                     spacing: Style.space(2)
 
                     Text {
+                      textFormat: Text.PlainText
                       anchors.right: parent.right
                       text: modelData.kind === "bot" ? root.fmtAgo(modelData.bot.last_activity_ts) : ""
                       color: root.dim
@@ -833,6 +937,7 @@ Panel {
                       radius: height / 2
                       color: root.accent
                       Text {
+                        textFormat: Text.PlainText
                         id: unreadText
                         anchors.centerIn: parent
                         text: modelData.kind === "bot" ? String(modelData.bot.unread) : ""
@@ -869,6 +974,7 @@ Panel {
 
           // ---- empty states
           Text {
+            textFormat: Text.PlainText
             visible: root.snap && root.bots.length === 0
             width: parent.width
             topPadding: Style.space(10)
@@ -885,6 +991,7 @@ Panel {
             width: parent.width
             height: Style.space(30)
             Text {
+              textFormat: Text.PlainText
               anchors.verticalCenter: parent.verticalCenter
               text: "j/k move · ⏎ open app · g " + root.ordering
                     + " · h hide · r beside logo: " + root.barMetric

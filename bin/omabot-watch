@@ -15,6 +15,8 @@ import base64
 import json
 import os
 import sys
+import math
+import re
 import time
 
 STATE = os.path.expanduser("~/.config/Grok Bot")
@@ -28,9 +30,23 @@ CACHE = os.path.expanduser("~/.local/state/omarchy/omabot/avatars")
 # Avatar palette, lifted from the app bundle so the widget matches it exactly.
 COLORS = {
     "red": "#FF263C", "orange": "#FF6700", "yellow": "#FF9800", "green": "#00C972",
-    "cyan": "#00BCA6", "blue": "#1084FE", "violet": "#9159FE", "magenta": "#FF309B",
+    "cyan": "#00BCA6", "blue": "#1084FE", "violet": "#9159FE", "purple": "#9159FE", "magenta": "#FF309B",
     "brown": "#936439", "gray": "#777777",
 }
+
+
+def object_value(value):
+    return value if isinstance(value, dict) else {}
+
+
+def text_value(value, limit=160):
+    if not isinstance(value, str):
+        return ""
+    return re.sub(r"[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]", " ", value)[:limit]
+
+
+def number_value(value):
+    return value if type(value) in (int, float) and math.isfinite(value) and value >= 0 else 0
 
 
 def decode_key(path):
@@ -65,8 +81,8 @@ def load(index, suffix):
         if key.endswith(suffix):
             try:
                 with open(path, "rb") as f:
-                    return json.load(f).get("value")
-            except (OSError, ValueError):
+                    return object_value(json.load(f)).get("value")
+            except (OSError, ValueError, RecursionError):
                 return None
     return None
 
@@ -92,22 +108,26 @@ def working_state(index, bot_id, now):
     if not cached or cached[0] != mtime:
         try:
             with open(path, "rb") as f:
-                entries = json.load(f).get("value", {}).get("entries") or []
+                entries = object_value(object_value(json.load(f)).get("value")).get("entries") or []
         except (OSError, ValueError):
+            entries = []
+        if not isinstance(entries, list):
             entries = []
         last_user = 0.0
         for e in reversed(entries):
+            if not isinstance(e, dict):
+                continue
             kind = e.get("kind")
-            if kind == "send-message":          # the bot answered after it
+            if kind == "send-message" or (kind == "message" and e.get("role") == "assistant"):
                 break
             if kind == "message" and e.get("role") == "user":
-                last_user = (e.get("timestampMs") or 0) / 1000.0
+                last_user = number_value(e.get("timestampMs")) / 1000.0
                 break
         _transcripts[bot_id] = (mtime, last_user)
         cached = _transcripts[bot_id]
     since = cached[1]
     # Cap it: a reply that never came should not leave a bot working forever.
-    return bool(since and now - since < 900), since
+    return bool(since and 0 <= now - since < 900), since
 
 
 # Bots with a picture instead of a shape: the roster gives them a null shape
@@ -172,12 +192,13 @@ def marker():
             data = json.load(f)
     except (OSError, ValueError):
         return {"running": False}
-    alive = data.get("aliveAtMs", 0) / 1000.0
+    data = object_value(data)
+    alive = number_value(data.get("aliveAtMs")) / 1000.0
     return {
-        "running": (time.time() - alive) < 120,
+        "running": 0 <= time.time() - alive < 120,
         "version": data.get("appVersion"),
         "pid": data.get("pid"),
-        "started_ts": (data.get("startedAtMs") or 0) / 1000.0,
+        "started_ts": number_value(data.get("startedAtMs")) / 1000.0,
         "alive_ts": alive,
         "crash_seen": bool(data.get("crashSeen")),
     }
@@ -188,41 +209,54 @@ def snapshot(index):
     rows = roster.get("rows") if isinstance(roster, dict) else None
     if not isinstance(rows, list):
         rows = []
-    sections = (load(index, "sidebar.last-sections") or {}).get("sections") or []
-    selection = (load(index, "selection.last-agent") or {}).get("agentId")
-    refs = load(index, "ui-agent-refs") or {}
-    pinned = refs.get("pinnedAgentIds") or []
+    sections = object_value(load(index, "sidebar.last-sections")).get("sections") or []
+    selection = object_value(load(index, "selection.last-agent")).get("agentId")
+    refs = object_value(load(index, "ui-agent-refs"))
+    pinned = refs.get("pinnedAgentIds")
+    if not isinstance(pinned, list):
+        pinned = []
 
     now = time.time()
     pictures = avatars(index)
     bots = []
-    for row in rows:
+    for row in rows[:256]:
         if not isinstance(row, dict) or row.get("isHiddenFromSidebar"):
             continue
-        entry = row.get("lastEntry") or {}
-        last_text = entry.get("text") or entry.get("kind") or ""
-        color = row.get("avatarColor")
-        working, working_since = working_state(index, row.get("id"), now)
+        bot_id = text_value(row.get("id"), 128)
+        if not bot_id:
+            continue
+        entry = object_value(row.get("lastEntry"))
+        last_text = text_value(entry.get("text")) or text_value(entry.get("kind"))
+        color = text_value(row.get("avatarColor"), 24)
+        awaiting = row.get("awaitingUserResponse")
+        needs_input = awaiting is True or isinstance(awaiting, dict)
+        reason = text_value(object_value(awaiting).get("reason"), 320)
+        working, working_since = working_state(index, bot_id, now)
+        # Waiting for a decision is not still thinking about the previous message.
+        working = working and not needs_input
+        notify_enabled = row.get("notifyOnUpdatesEnabled", row.get("notificationsEnabled", False)) is True
         bots.append({
-            "id": row.get("id"),
-            "name": row.get("name") or "(unnamed)",
-            "title": row.get("title") or "",
-            "description": row.get("description") or "",
-            "shape": row.get("avatarShape") or ("group" if row.get("isGroup") else "squircle"),
+            "id": bot_id,
+            "name": text_value(row.get("name"), 100) or "(unnamed)",
+            "title": text_value(row.get("title"), 100),
+            "description": text_value(row.get("description")),
+            "shape": text_value(row.get("avatarShape"), 32) or ("group" if row.get("isGroup") else "squircle"),
             "color": color,
             # A picture wins over the shape, the way it does in the app.
             "avatar": pictures.get(row.get("id")) if row.get("avatarVersion") else None,
             "hex": COLORS.get(color or "", None),
             "is_group": bool(row.get("isGroup")),
-            "members": len(row.get("memberIds") or []),
-            "unread": int(row.get("unreadCount") or 0),
-            "awaiting": bool(row.get("awaitingUserResponse")),
+            "members": len(row["memberIds"]) if isinstance(row.get("memberIds"), list) else 0,
+            "unread": min(9999, int(number_value(row.get("unreadCount")))) or int(row.get("hasUnread") is True),
+            "awaiting": needs_input,
+            "awaiting_reason": reason,
+            "message_id": text_value(row.get("lastMessageId"), 128),
             "working": working,
             "working_since_ts": working_since,
-            "muted": not row.get("notificationsEnabled", False),
-            "last_text": last_text[:160],
-            "last_activity_ts": (row.get("lastActivityAt") or 0) / 1000.0,
-            "last_viewed_ts": (row.get("lastViewedAt") or 0) / 1000.0,
+            "muted": not notify_enabled,
+            "last_text": last_text,
+            "last_activity_ts": number_value(row.get("lastActivityAt")) / 1000.0,
+            "last_viewed_ts": number_value(row.get("lastViewedAt")) / 1000.0,
             "focused": row.get("id") == selection,
             "pinned": row.get("id") in pinned,
         })
@@ -230,10 +264,13 @@ def snapshot(index):
     by_id = {b["id"]: b for b in bots}
     grouped, seen = [], set()
     for section in sections if isinstance(sections, list) else []:
-        ids = [i for i in (section.get("agentIds") or []) if i in by_id]
+        if not isinstance(section, dict):
+            continue
+        agent_ids = section.get("agentIds")
+        ids = [i for i in agent_ids if isinstance(i, str) and i in by_id] if isinstance(agent_ids, list) else []
         seen.update(ids)
         if ids or section.get("id") != "__agents__":
-            grouped.append({"id": section.get("id"), "name": section.get("name") or "", "bot_ids": ids})
+            grouped.append({"id": text_value(section.get("id"), 128), "name": text_value(section.get("name"), 100), "bot_ids": ids})
     loose = [b["id"] for b in bots if b["id"] not in seen]
     if loose:
         grouped.append({"id": "__loose__", "name": "Unassigned", "bot_ids": loose})

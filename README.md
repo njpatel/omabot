@@ -83,11 +83,34 @@ omarchy bar set njpatel.omabot maxBarAvatars 4      # 1-6
 
 `omarchy-shell njpatel.omabot demo` swaps in a staged roster - fourteen invented bots across two channels - for screenshots and for showing the thing off. Call it again for the real one.
 
+### Rich notifications
+
+`omarchy bar set njpatel.omabot richNotifications true` enables desktop alerts for
+new unread replies and requests for input. Each includes the bot's name, status,
+role and a short preview or decision reason. Click it to open the roster, not to
+approve a bot's request. Requires `notify-send` from `libnotify`, already a Grok
+Bot dependency, and a notification service with markup and default-action support.
+
+Off by default because Grok Bot sends its own notifications. Omabot respects the
+bot's update-notification preference, consumes the initial snapshot silently,
+and sends nothing while its panel is open or names are scrubbed. Alerts are
+transient, respect the notification service's Do Not Disturb mode and use the
+Grok Bot application icon. No message-supplied image or executable is used.
+
+After enabling `demo`, `omarchy-shell njpatel.omabot demoNotification` sends one
+invented alert even with automatic notifications off. In development, run both
+commands through `omalab ipc -n <owned-lab>` on its private bus.
+
 ## How it works
 
 Grok Bot keeps its client state in `~/.config/Grok Bot/sand-client-persistence`, as blobs whose filenames are base32 of the state key. `bin/omabot-watch` decodes those, follows the roster, the channels and the session marker, and streams a normalised snapshot as JSON lines; `Widget.qml` renders it, and `Avatar.qml` draws the eighteen shapes and the colour palette taken from the app bundle, so a bot looks the same here as it does there.
 
-None of that is a documented contract - the roster is at `schemaVersion` 4 - so every field is read defensively, and an unfamiliar shape degrades to an empty roster rather than a broken bar. If a Grok Bot update moves things, `bin/omabot-watch` is the file to fix.
+None of that is a documented contract. Grok Bot 0.47.0 still writes roster
+`schemaVersion` 4; Omabot understands its `purple` palette name, structured
+requests for input and `notifyOnUpdatesEnabled` preference, while retaining the
+older `violet` name and `notificationsEnabled` fallback. Optional fields are
+read defensively. Future app versions are not guaranteed: if an update moves
+things, `bin/omabot-watch` is the file to fix.
 
 ## License
 

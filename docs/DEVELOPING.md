@@ -69,15 +69,30 @@ chasing a bug that is not there.
   **mtime**. Avatars are cached the same way, and decoded per `version` so an
   unchanged picture costs nothing and a changed one writes a new file.
 - A bot is *working* when its transcript ends on a user message with no
-  `send-message` after it. The app streams replies over its gateway and only
-  persists the finished message, so this is the honest local signal — but it is
-  **capped at 900s**, because a reply that never came should not leave a bot
-  working forever.
+  `send-message` or assistant `message` after it. User-message roles remain
+  top-level in 0.47.0. A structured request for input suppresses that working
+  estimate. It is **capped at 900s**, because an unanswered message should not
+  leave a bot working forever.
 - Avatars arrive as base64 data URLs inside one blob. They are decoded to files
   under `~/.local/state/omarchy/omabot/avatars/`, because QML wants files and a
   200KB string per bot has no business crossing a JSON line every two seconds.
   Files nobody wears any more are swept, or changing an avatar twice leaves
   dead ones behind.
+
+**Notifications**
+
+- `richNotifications` is opt-in and owned by the first screen's visible widget,
+  not the hidden measurement copy. The watcher remains read-only; the widget
+  compares successive snapshots, without notifying for its initial roster.
+- `notifyOnUpdatesEnabled` takes precedence over the older
+  `notificationsEnabled`. Requests retain `awaitingUserResponse.reason`; reply
+  alerts deduplicate by `lastMessageId`, falling back to activity time for old
+  rows without it. The roster's running flags are not persisted, so we do not
+  pretend to have an exact live turn-completion feed.
+- Notification text is escaped before adding fixed markup. A live libnotify
+  default action opens the roster; there is no stored executable action. The
+  sender has a 30-second deadline and an eight-item queue. Use `demoNotification`
+  only through an owned lab's private IPC during development.
 
 **Drawing a bot**
 
