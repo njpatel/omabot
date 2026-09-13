@@ -17,6 +17,8 @@ import os
 import sys
 import math
 import re
+import secrets
+import stat
 import time
 
 STATE = os.path.expanduser("~/.config/Grok Bot")
@@ -135,55 +137,160 @@ def working_state(index, bot_id, now):
 # blob as a data URL. Decode each one once, to a file named for its version, so
 # a changed picture writes a new file and an unchanged one costs nothing.
 _avatars = (None, {})
+MAX_AVATAR_BYTES = 2 * 1024 * 1024
+MAX_AVATAR_BLOB_BYTES = 16 * 1024 * 1024
+
+
+def avatar_filename(version, mime):
+    if not isinstance(version, str) or not re.fullmatch(r"[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}", version) or ".." in version:
+        return None
+    extension = {"data:image/png;base64": "png", "data:image/jpeg;base64": "jpg"}.get(mime)
+    return version + "." + extension if extension else None
+
+
+def open_avatar_cache():
+    # Hold every parent while descending: a planted directory symlink must not
+    # redirect creation, publication or cleanup outside the plugin's cache.
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    fd = os.open("/", flags)
+    try:
+        for part in os.path.abspath(CACHE).split(os.sep)[1:]:
+            try:
+                child = os.open(part, flags, dir_fd=fd)
+            except FileNotFoundError:
+                try:
+                    os.mkdir(part, 0o700, dir_fd=fd)
+                except FileExistsError:
+                    pass
+                child = os.open(part, flags, dir_fd=fd)
+            os.close(fd)
+            fd = child
+        if os.fstat(fd).st_uid != os.geteuid():
+            raise PermissionError("avatar cache is not owned by this user")
+        os.fchmod(fd, 0o700)
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def cached_avatar(dirfd, name):
+    try:
+        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=dirfd)
+    except FileNotFoundError:
+        return False
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_nlink != 1 or not 0 < info.st_size <= MAX_AVATAR_BYTES:
+            raise ValueError("invalid cached avatar")
+        os.fchmod(fd, 0o600)
+        return True
+    finally:
+        os.close(fd)
+
+
+def write_avatar(dirfd, name, data):
+    # Never open a predictable .part file, even after an existence check.
+    temporary = ".avatar-" + secrets.token_hex(16) + ".tmp"
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=dirfd)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, name, src_dir_fd=dirfd, dst_dir_fd=dirfd)
+        os.fsync(dirfd)
+    finally:
+        try:
+            os.unlink(temporary, dir_fd=dirfd)
+        except FileNotFoundError:
+            pass
+
+
+def avatar_entries(path):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    with os.fdopen(fd, "rb") as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_AVATAR_BLOB_BYTES:
+            raise ValueError("invalid avatar blob")
+        raw = stream.read(MAX_AVATAR_BLOB_BYTES + 1)
+        if len(raw) > MAX_AVATAR_BLOB_BYTES:
+            raise ValueError("avatar blob exceeds limit")
+    entries = object_value(object_value(json.loads(raw)).get("value")).get("entries")
+    if not isinstance(entries, list) or len(entries) > 256:
+        raise ValueError("invalid avatar entries")
+    return entries
 
 
 def avatars(index):
-    """bot id -> path of its decoded avatar image."""
+    """bot id -> path of its decoded avatar image; rejected entries use a shape."""
     global _avatars
-    entry = None
-    for key, (path, mtime) in index.items():
-        if key.endswith("roster.agent-avatars"):
-            entry = (path, mtime)
-            break
-    if not entry:
+    entry = next(((path, mtime) for key, (path, mtime) in index.items()
+                  if key.endswith("roster.agent-avatars")), None)
+    if entry is None:
         return {}
     path, mtime = entry
-    if _avatars[0] == mtime:
-        return _avatars[1]
-    out = {}
     try:
-        with open(path, "rb") as f:
-            entries = json.load(f).get("value", {}).get("entries") or []
-    except (OSError, ValueError):
-        entries = []
-    os.makedirs(CACHE, exist_ok=True)
-    for e in entries:
-        bot_id, version, url = e.get("id"), e.get("version"), e.get("dataUrl") or ""
-        if not bot_id or not version or "," not in url:
-            continue
-        head, b64 = url.split(",", 1)
-        ext = "png" if "png" in head else ("jpg" if "jpeg" in head or "jpg" in head else "img")
-        dest = os.path.join(CACHE, "%s.%s" % (version, ext))
-        if not os.path.exists(dest):
-            try:
-                tmp = dest + ".part"
-                with open(tmp, "wb") as f:
-                    f.write(base64.b64decode(b64))
-                os.replace(tmp, dest)
-            except (OSError, ValueError):
-                continue
-        out[bot_id] = dest
-    # Drop pictures nobody wears any more, so changing an avatar twice does not
-    # leave two dead files behind.
-    keep = set(os.path.basename(p) for p in out.values())
-    try:
-        for name in os.listdir(CACHE):
-            if name not in keep:
-                os.remove(os.path.join(CACHE, name))
+        dirfd = open_avatar_cache()
     except OSError:
-        pass
-    _avatars = (mtime, out)
-    return out
+        return {}
+    try:
+        info = os.fstat(dirfd)
+        cache_key = (path, mtime, info.st_dev, info.st_ino)
+        if _avatars[0] == cache_key:
+            # A replaced cache entry must not turn into a symlink on a later
+            # snapshot just because the Grok Bot blob itself did not change.
+            out = {}
+            for bot_id, picture in _avatars[1].items():
+                try:
+                    if cached_avatar(dirfd, os.path.basename(picture)):
+                        out[bot_id] = picture
+                except (OSError, ValueError):
+                    pass
+            if len(out) == len(_avatars[1]):
+                return out
+        try:
+            entries = avatar_entries(path)
+        except (OSError, ValueError, RecursionError):
+            return {}
+        out, complete = {}, True
+        for item in entries:
+            if not isinstance(item, dict):
+                complete = False
+                continue
+            bot_id, version, url = item.get("id"), item.get("version"), item.get("dataUrl")
+            if not isinstance(bot_id, str) or not bot_id or len(bot_id) > 128 or not isinstance(url, str) or len(url) > 4 * ((MAX_AVATAR_BYTES + 2) // 3) + 32:
+                complete = False
+                continue
+            mime, separator, encoded = url.partition(",")
+            name = avatar_filename(version, mime)
+            if not separator or name is None:
+                complete = False
+                continue
+            try:
+                if not cached_avatar(dirfd, name):
+                    data = base64.b64decode(encoded, validate=True)
+                    if not 0 < len(data) <= MAX_AVATAR_BYTES:
+                        raise ValueError("avatar exceeds limit")
+                    write_avatar(dirfd, name, data)
+                out[bot_id] = os.path.join(CACHE, name)
+            except (OSError, ValueError):
+                complete = False
+        # Only retire files this watcher previously returned, never everything
+        # found in the directory. Invalid updates cannot delete a good picture.
+        if complete and _avatars[0] and _avatars[0][2:] == cache_key[2:]:
+            retired = set(_avatars[1].values()) - set(out.values())
+            for picture in retired:
+                try:
+                    name = os.path.basename(picture)
+                    if cached_avatar(dirfd, name):
+                        os.unlink(name, dir_fd=dirfd)
+                except (OSError, ValueError):
+                    pass
+        _avatars = (cache_key, out)
+        return out
+    finally:
+        os.close(dirfd)
 
 
 def marker():

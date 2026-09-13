@@ -26,6 +26,11 @@ Nothing to configure. Omabot reads the state Grok Bot already keeps on disk, so 
 
 Remove with `omarchy plugin remove njpatel.omabot`. It leaves behind only `~/.local/state/omarchy/omabot/`, where it keeps a copy of any avatar picture it has had to decode - delete it if you like.
 
+Cached pictures use a private directory and atomic writes. Invalid avatar
+filenames, symlinked cache paths and oversized payloads fall back to the drawn
+avatar. Cleanup only removes pictures previously used by the current watcher;
+unrelated files and older-session cache entries are left alone.
+
 ## In the bar
 
 The Grok Bot mark is always there, dimmed when the app is not running. Beside it are the bots waiting on you, drawn as themselves. Nothing beside the mark means nothing needs you.
