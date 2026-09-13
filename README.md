@@ -34,6 +34,14 @@ The Grok Bot mark is always there, dimmed when the app is not running. Beside it
 
 Bring the pointer near and they look up at you, one after another.
 
+When a bot joins the bar, its neighbours make room before it slides in from the
+screen edge and settles. This follows top, bottom, left and right bars; side
+bars stack the avatars vertically. A bot already visible as working or unread
+settles again when it needs your input, without opening another slot. Ordinary
+state refreshes do not replay the entrance.
+
+Desktop notifications remain Grok Bot's job. Omabot does not send a second set.
+
 | | |
 |---|---|
 | click | open the panel |
@@ -83,23 +91,10 @@ omarchy bar set njpatel.omabot maxBarAvatars 4      # 1-6
 
 `omarchy-shell njpatel.omabot demo` swaps in a staged roster - fourteen invented bots across two channels - for screenshots and for showing the thing off. Call it again for the real one.
 
-### Rich notifications
-
-`omarchy bar set njpatel.omabot richNotifications true` enables desktop alerts for
-new unread replies and requests for input. Each includes the bot's name, status,
-role and a short preview or decision reason. Click it to open the roster, not to
-approve a bot's request. Requires `notify-send` from `libnotify`, already a Grok
-Bot dependency, and a notification service with markup and default-action support.
-
-Off by default because Grok Bot sends its own notifications. Omabot respects the
-bot's update-notification preference, consumes the initial snapshot silently,
-and sends nothing while its panel is open or names are scrubbed. Alerts are
-transient, respect the notification service's Do Not Disturb mode and use the
-Grok Bot application icon. No message-supplied image or executable is used.
-
-After enabling `demo`, `omarchy-shell njpatel.omabot demoNotification` sends one
-invented alert even with automatic notifications off. In development, run both
-commands through `omalab ipc -n <owned-lab>` on its private bus.
+`omarchy-shell njpatel.omabot demoAssistance` closes the panel and, after one
+second, makes the invented Chief of Staff ask for help. Repeat to replay the
+space-then-drop animation. During development use
+`omalab ipc -n <owned-lab> njpatel.omabot demoAssistance`, never the host shell.
 
 ## How it works
 

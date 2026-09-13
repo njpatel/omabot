@@ -79,20 +79,24 @@ chasing a bug that is not there.
   Files nobody wears any more are swept, or changing an avatar twice leaves
   dead ones behind.
 
-**Notifications**
+**Current roster fields**
 
-- `richNotifications` is opt-in and owned by the first screen's visible widget,
-  not the hidden measurement copy. The watcher remains read-only; the widget
-  compares successive snapshots, without notifying for its initial roster.
 - `notifyOnUpdatesEnabled` takes precedence over the older
-  `notificationsEnabled`. Requests retain `awaitingUserResponse.reason`; reply
-  alerts deduplicate by `lastMessageId`, falling back to activity time for old
-  rows without it. The roster's running flags are not persisted, so we do not
-  pretend to have an exact live turn-completion feed.
-- Notification text is escaped before adding fixed markup. A live libnotify
-  default action opens the roster; there is no stored executable action. The
-  sender has a 30-second deadline and an eight-item queue. Use `demoNotification`
-  only through an owned lab's private IPC during development.
+  `notificationsEnabled` when reading mute state. Desktop notifications remain
+  Grok Bot's responsibility; Omabot does not send a second set.
+- Requests retain `awaitingUserResponse.reason`. The roster's running flags
+  are not persisted, so working state remains a transcript-based estimate.
+
+**Bar arrivals**
+
+- A keyed `ListModel` retains each visible bot's delegate across snapshots and
+  reordering. New slots expand for 220ms before a 420ms edge-relative entrance.
+  An existing bot becoming awaiting replays only the entrance, not the layout.
+- The bar uses a row or column according to its position. The translation
+  points inward from top/bottom/left/right without changing avatar geometry.
+- `demoAssistance` removes the invented waiting bot for one second and brings
+  it back. Verify all four edges through owned lab configuration, and record
+  video: a final screenshot cannot prove the sequence or lack of replay.
 
 **Drawing a bot**
 

@@ -250,7 +250,6 @@ def snapshot(index):
             "unread": min(9999, int(number_value(row.get("unreadCount")))) or int(row.get("hasUnread") is True),
             "awaiting": needs_input,
             "awaiting_reason": reason,
-            "message_id": text_value(row.get("lastMessageId"), 128),
             "working": working,
             "working_since_ts": working_since,
             "muted": not notify_enabled,

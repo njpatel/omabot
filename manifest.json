@@ -30,17 +30,9 @@
       "barMetric": "avatars",
       "groupBySection": "true",
       "maxBarAvatars": 3,
-      "ordering": "attention",
-      "richNotifications": "false"
+      "ordering": "attention"
     },
     "schema": [
-      {
-        "key": "richNotifications",
-        "type": "boolean",
-        "label": "Rich desktop notifications",
-        "defaultValue": "false",
-        "description": "Notify for new replies and requests for input, with context and a click to open the roster. Respects each bot's update preference. Off by default to avoid duplicating Grok Bot's own alerts."
-      },
       {
         "key": "barMetric",
         "type": "enum",
