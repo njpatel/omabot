@@ -69,15 +69,36 @@ chasing a bug that is not there.
   **mtime**. Avatars are cached the same way, and decoded per `version` so an
   unchanged picture costs nothing and a changed one writes a new file.
 - A bot is *working* when its transcript ends on a user message with no
-  `send-message` after it. The app streams replies over its gateway and only
-  persists the finished message, so this is the honest local signal — but it is
-  **capped at 900s**, because a reply that never came should not leave a bot
-  working forever.
+  `send-message` or assistant `message` after it. User-message roles remain
+  top-level in 0.47.0. A structured request for input suppresses that working
+  estimate. It is **capped at 900s**, because an unanswered message should not
+  leave a bot working forever.
 - Avatars arrive as base64 data URLs inside one blob. They are decoded to files
   under `~/.local/state/omarchy/omabot/avatars/`, because QML wants files and a
   200KB string per bot has no business crossing a JSON line every two seconds.
   Files nobody wears any more are swept, or changing an avatar twice leaves
   dead ones behind.
+
+**Current roster fields**
+
+- `notifyOnUpdatesEnabled` takes precedence over the older
+  `notificationsEnabled` when reading mute state. Desktop notifications remain
+  Grok Bot's responsibility; Omabot does not send a second set.
+- Requests retain `awaitingUserResponse.reason`. The roster's running flags
+  are not persisted, so working state remains a transcript-based estimate.
+
+**Bar arrivals**
+
+- A keyed `ListModel` retains each visible bot's delegate across snapshots and
+  reordering. New slots expand for 220ms, then enter for 280ms with two diminishing
+  rebounds over 490ms. After a 140ms settled pause, an awaiting bot plays the
+  existing one-shot wiggle. An existing bot becoming awaiting replays the landing
+  and wiggle, not the layout. Hover greetings are suppressed during landing.
+- The bar uses a row or column according to its position. The translation
+  points inward from top/bottom/left/right without changing avatar geometry.
+- `demoAssistance` removes the invented waiting bot for one second and brings
+  it back. Verify all four edges through owned lab configuration, and record
+  video: a final screenshot cannot prove the sequence or lack of replay.
 
 **Drawing a bot**
 

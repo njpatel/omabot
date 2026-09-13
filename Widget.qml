@@ -79,6 +79,7 @@ Panel {
   // idle; ages are relative to when demo mode was switched on.
   property bool demoMode: false
   property double demoStart: 0
+  property bool demoNeedsHelp: true
   readonly property var demoSnap: {
     var t = (demoStart || Date.now()) / 1000
     var ago = function(mins) { return t - mins * 60 }
@@ -86,10 +87,11 @@ Panel {
       return { id: id, name: name, title: title, description: "", shape: shape, color: color,
                hex: hex, is_group: false, members: 0, unread: unread, awaiting: awaiting,
                working: false, working_since_ts: 0, muted: false, last_text: text,
-               last_activity_ts: ago(mins), last_viewed_ts: ago(mins), focused: false, pinned: false }
+               last_activity_ts: ago(mins), last_viewed_ts: ago(mins), focused: false, pinned: false,
+               awaiting_reason: awaiting ? "Approval needed before changing your calendar." : "" }
     }
     var bots = [
-      bot("d1", "Chief of Staff", "Operations", "squircle", "red", "#FF263C", 0, true, 34,
+      bot("d1", "Chief of Staff", "Operations", "squircle", "red", "#FF263C", 0, demoNeedsHelp, 34,
           "Your Thursday is triple-booked. Shall I move the Vercel sync to Friday?"),
       bot("d2", "Account Health", "Customer Success", "hex", "violet", "#9159FE", 3, false, 12,
           "Northwind's ingest dropped 60% this week - worth a call before renewal."),
@@ -120,8 +122,8 @@ Panel {
     ]
     return {
       generated_ts: t,
-      app: { running: true, version: "0.35.0", pid: 0, started_ts: ago(600), alive_ts: t, crash_seen: false },
-      counts: { bots: bots.length, awaiting: 1, working: 0, unread: 2, unread_messages: 4, groups: 0 },
+      app: { running: true, version: "0.47.0", pid: 0, started_ts: ago(600), alive_ts: t, crash_seen: false },
+      counts: { bots: bots.length, awaiting: demoNeedsHelp ? 1 : 0, working: 0, unread: 2, unread_messages: 4, groups: 0 },
       sections: [
         { id: "s1", name: "ACME", bot_ids: ["d1", "d2", "d3", "d4", "d5", "d6", "d7", "d8", "d9", "d10"] },
         { id: "s2", name: "Personal", bot_ids: ["p1", "p2", "p3", "p4"] }
@@ -130,11 +132,14 @@ Panel {
     }
   }
   function toggleDemo() {
+    demoArrivalTimer.stop()
+    demoNeedsHelp = true
     demoStart = Date.now()
     demoMode = !demoMode
     cursor = 0
     if (opened) requestGreeting(false)
   }
+  Timer { id: demoArrivalTimer; interval: 1000; onTriggered: root.demoNeedsHelp = true }
   property bool scrub: false
   property int cursor: 0
   property double nowMs: Date.now()
@@ -231,7 +236,10 @@ Panel {
   function parseState(text) {
     try {
       var parsed = JSON.parse(String(text || ""))
-      if (parsed && typeof parsed === "object") { root.liveSnap = parsed; root.nowMs = Date.now() }
+      if (parsed && typeof parsed === "object" && Array.isArray(parsed.bots)) {
+        root.liveSnap = parsed
+        root.nowMs = Date.now()
+      }
     } catch (e) {
       console.warn("omabot", "bad state line", e)
     }
@@ -329,6 +337,13 @@ Panel {
       if (root.demoMode && !root.opened) root.open()
       return root.demoMode ? "demo roster" : "live roster"
     }
+    function demoAssistance(): string {
+      if (!root.demoMode) root.toggleDemo()
+      root.close()
+      root.demoNeedsHelp = false
+      demoArrivalTimer.restart()
+      return "Chief of Staff will ask for assistance in one second"
+    }
     // Play the greeting on demand: every bot, whether or not it has news.
     // Opens the panel first, because a panel loses focus - and closes - the
     // moment you type the command in a terminal.
@@ -351,7 +366,8 @@ Panel {
     }
     function away(): string { keyCatcher.pointerGone(); return "away" }
     function state(): string {
-      return JSON.stringify({ counts: root.counts, app: root.app, bots: root.bots.length })
+      return JSON.stringify({ counts: root.counts, app: root.app, bots: root.bots.length,
+        barEdge: root.barEdge, barAvatars: barAvatarModel.count })
     }
   }
 
@@ -411,15 +427,34 @@ Panel {
       + (app.version || "?")
   }
 
-  implicitWidth: row.implicitWidth
-  implicitHeight: bar ? bar.barSize : Style.bar.sizeHorizontal
+  implicitWidth: vertical ? (bar ? bar.barSize : Style.bar.sizeHorizontal) : row.implicitWidth
+  implicitHeight: vertical ? row.implicitHeight : (bar ? bar.barSize : Style.bar.sizeHorizontal)
   readonly property real openPanelIndicatorWidth: row.width
+  readonly property real openPanelIndicatorHeight: row.height
 
   // What the bar draws beside the logo. Nothing waiting means nothing beside
   // it - the logo alone is still the widget, and still opens the panel.
   readonly property bool vertical: !!(bar && bar.vertical)
-  readonly property var barAvatars: (!snap || !app.running || vertical || barMetric !== "avatars")
+  readonly property var barAvatars: (!snap || !app.running || barMetric !== "avatars")
     ? [] : wanting.slice(0, maxBarAvatars)
+  readonly property string barEdge: bar ? bar.position : "top"
+
+  // Keep delegates keyed by bot, rather than recreating every face on each
+  // watcher snapshot. Only new slots make room and drop in.
+  ListModel { id: barAvatarModel }
+  onBarAvatarsChanged: syncBarAvatars()
+
+  function syncBarAvatars() {
+    var ids = barAvatars.map(function(bot) { return bot.id })
+    for (var i = barAvatarModel.count - 1; i >= 0; i--)
+      if (ids.indexOf(barAvatarModel.get(i).botId) < 0) barAvatarModel.remove(i)
+    for (var j = 0; j < ids.length; j++) {
+      var at = j
+      while (at < barAvatarModel.count && barAvatarModel.get(at).botId !== ids[j]) at++
+      if (at === barAvatarModel.count) barAvatarModel.insert(j, { botId: ids[j] })
+      else if (at !== j) barAvatarModel.move(at, j, 1)
+    }
+  }
   // The glyphs beside it carry their own optical padding; a mark drawn to the
   // full icon canvas would stand taller than all of them.
   readonly property real markSize: Math.round(Style.bar.iconCanvas * 0.82)
@@ -433,9 +468,12 @@ Panel {
     return (h % 2) === (markSize % 2) ? h : h + 1
   }
 
-  Row {
+  Grid {
     id: row
     anchors.centerIn: parent
+    columns: root.vertical ? 1 : 4
+    horizontalItemAlignment: Grid.AlignHCenter
+    verticalItemAlignment: Grid.AlignVCenter
     // The icon slot is wider than the mark drawn inside it, which leaves as
     // much air after the mark as there is between whole widgets. Pull back
     // into that padding so the mark and what follows read as one thing.
@@ -468,40 +506,91 @@ Panel {
       }
     }
 
-    // To its right: the bots waiting on you, as themselves. Centred on the
-    // button rather than on the row: the mark is centred in the button too, so
-    // sharing that reference makes both round to the same pixel.
-    Row {
+    // Along the bar: reserve the slot first, then enter from the screen edge.
+    Item {
       id: avatars
-      anchors.verticalCenter: button.verticalCenter
-      spacing: Style.space(3)
-      visible: root.barAvatars.length > 0
+      implicitWidth: root.vertical ? root.barAvatarSize : Math.max(0, avatarGrid.implicitWidth - Style.space(3))
+      implicitHeight: root.vertical ? Math.max(0, avatarGrid.implicitHeight - Style.space(3)) : root.barAvatarSize
+      width: implicitWidth
+      height: implicitHeight
+      visible: barAvatarModel.count > 0
 
-      Repeater {
-        model: root.barAvatars
-        Avatar {
-          id: barAvatar
-          required property var modelData
-          required property int index
-          width: root.barAvatarSize
-          height: root.barAvatarSize
-          shape: modelData.shape
-          image: modelData.avatar ? "file://" + modelData.avatar : ""
-          fill: root.colorFor(modelData)
-          eyeColor: root.eyeInk
-          face: root.faceFor(modelData)
+      Grid {
+        id: avatarGrid
+        columns: root.vertical ? 1 : Math.max(1, barAvatarModel.count)
 
-          // Look up when you come to open the panel. Each one waits a little
-          // longer than the last, so it ripples along the row instead of
-          // firing as one block.
-          Connections {
-            target: root
-            function onBarGreeted() { greet.restart() }
-          }
-          Timer {
-            id: greet
-            interval: 30 + barAvatar.index * 90
-            onTriggered: barAvatar.playBold(barAvatar.index + root.barGreetSeed)
+        Repeater {
+          model: barAvatarModel
+          Item {
+            id: avatarSlot
+            required property string botId
+            required property int index
+            readonly property var bot: {
+              for (var i = 0; i < root.barAvatars.length; i++)
+                if (root.barAvatars[i].id === botId) return root.barAvatars[i]
+              return ({})
+            }
+            readonly property bool awaiting: !!bot.awaiting
+            property bool ready: false
+            property real spaceProgress: 0
+            property real dropProgress: 0
+            property real ink: 0
+            readonly property real extent: (root.barAvatarSize + Style.space(3)) * spaceProgress
+            width: root.vertical ? root.barAvatarSize : extent
+            height: root.vertical ? extent : root.barAvatarSize
+
+            Component.onCompleted: { ready = true; arrive.start() }
+            // Already visible as working/unread? Its space exists: just settle
+            // into the new attentive state, without shifting the neighbours.
+            onAwaitingChanged: if (ready && awaiting && !arrive.running) drop.restart()
+
+            SequentialAnimation {
+              id: arrive
+              NumberAnimation { target: avatarSlot; property: "spaceProgress"; to: 1; duration: 220; easing.type: Easing.OutCubic }
+              ScriptAction { script: drop.restart() }
+            }
+            SequentialAnimation {
+              id: drop
+              // Hit the resting line, rebound towards the screen edge twice,
+              // then pause on the bar before the one-shot attention wiggle.
+              ParallelAnimation {
+                NumberAnimation { target: avatarSlot; property: "dropProgress"; from: 0; to: 1; duration: 280; easing.type: Easing.InQuad }
+                NumberAnimation { target: avatarSlot; property: "ink"; from: 0; to: 1; duration: 180 }
+              }
+              NumberAnimation { target: avatarSlot; property: "dropProgress"; to: 0.84; duration: 130; easing.type: Easing.OutQuad }
+              NumberAnimation { target: avatarSlot; property: "dropProgress"; to: 1; duration: 150; easing.type: Easing.InQuad }
+              NumberAnimation { target: avatarSlot; property: "dropProgress"; to: 0.945; duration: 100; easing.type: Easing.OutQuad }
+              NumberAnimation { target: avatarSlot; property: "dropProgress"; to: 1; duration: 110; easing.type: Easing.InQuad }
+              PauseAnimation { duration: 140 }
+              ScriptAction { script: { if (avatarSlot.awaiting) barAvatar.play(1) } }
+            }
+
+            Avatar {
+              id: barAvatar
+              width: root.barAvatarSize
+              height: root.barAvatarSize
+              shape: avatarSlot.bot.shape || "squircle"
+              image: avatarSlot.bot.avatar ? "file://" + avatarSlot.bot.avatar : ""
+              fill: root.colorFor(avatarSlot.bot)
+              eyeColor: root.eyeInk
+              face: root.faceFor(avatarSlot.bot)
+              opacity: avatarSlot.ink
+              transform: Translate {
+                readonly property real distance: (1 - avatarSlot.dropProgress) * ((root.vertical ? root.width : root.height) + root.barAvatarSize)
+                x: root.vertical ? (root.barEdge === "left" ? -1 : 1) * distance : 0
+                y: root.vertical ? 0 : (root.barEdge === "bottom" ? 1 : -1) * distance
+              }
+
+              Connections {
+                target: root
+                function onBarGreeted() { if (!arrive.running && !drop.running) greet.restart() }
+              }
+              Timer {
+                id: greet
+                interval: 30 + avatarSlot.index * 90
+                onTriggered: if (!arrive.running && !drop.running) barAvatar.playBold(avatarSlot.index + root.barGreetSeed)
+              }
+            }
           }
         }
       }
@@ -509,8 +598,8 @@ Panel {
 
     // Or, to its right: how many are waiting.
     Text {
+      textFormat: Text.PlainText
       id: metric
-      anchors.verticalCenter: button.verticalCenter
       visible: root.barText !== ""
       text: root.barText
       color: root.alarming ? root.urgent : (root.bar ? root.bar.barForeground : root.fg)
@@ -523,9 +612,10 @@ Panel {
     // The pull-back applies here too, so add it back or the tail comes up
     // short of the head.
     Item {
-      height: 1
-      width: (avatars.visible || metric.visible)
+      readonly property real padding: (avatars.visible || metric.visible)
         ? Math.round((button.width - root.markSize) / 2) + root.barPull : 0
+      height: root.vertical ? padding : 1
+      width: root.vertical ? 1 : padding
     }
   }
 
@@ -636,6 +726,7 @@ Panel {
               width: parent.width
               spacing: Style.space(2)
               Text {
+                textFormat: Text.PlainText
                 text: {
                   if (root.demoMode) return "GROK BOT · demo roster"
                   if (!root.snap) return "starting…"
@@ -647,6 +738,7 @@ Panel {
                 font.pixelSize: Style.font.caption
               }
               Text {
+                textFormat: Text.PlainText
                 visible: root.snap && root.app.running
                 text: {
                   var c = root.counts
@@ -710,6 +802,7 @@ Panel {
 
               // section header
               Text {
+                textFormat: Text.PlainText
                 visible: modelData.kind === "section"
                 anchors.left: parent.left
                 anchors.bottom: parent.bottom
@@ -777,6 +870,7 @@ Panel {
                       spacing: Style.space(5)
                       width: parent.width
                       Text {
+                        textFormat: Text.PlainText
                         text: modelData.kind === "bot" ? root.label(modelData.bot.name) : ""
                         color: modelData.kind === "bot" && modelData.bot.focused ? root.accent : root.fg
                         font.family: root.fontFamily
@@ -784,6 +878,7 @@ Panel {
                         font.bold: modelData.kind === "bot" && (modelData.bot.awaiting || modelData.bot.unread > 0)
                       }
                       Text {
+                        textFormat: Text.PlainText
                         text: modelData.kind === "bot"
                           ? (modelData.bot.is_group ? "group of " + modelData.bot.members
                                                     : root.label(modelData.bot.title))
@@ -797,9 +892,11 @@ Panel {
                     }
 
                     Text {
+                      textFormat: Text.PlainText
                       width: parent.width
                       text: modelData.kind === "bot"
-                        ? (modelData.bot.working ? "thinking…" : root.label(modelData.bot.last_text))
+                        ? (modelData.bot.awaiting && modelData.bot.awaiting_reason ? root.label(modelData.bot.awaiting_reason)
+                           : (modelData.bot.working ? "thinking…" : root.label(modelData.bot.last_text)))
                         : ""
                       // Full foreground for the ones waiting on you, dimmed for
                       // the rest: weight carries it, so nothing has to shout.
@@ -819,6 +916,7 @@ Panel {
                     spacing: Style.space(2)
 
                     Text {
+                      textFormat: Text.PlainText
                       anchors.right: parent.right
                       text: modelData.kind === "bot" ? root.fmtAgo(modelData.bot.last_activity_ts) : ""
                       color: root.dim
@@ -833,6 +931,7 @@ Panel {
                       radius: height / 2
                       color: root.accent
                       Text {
+                        textFormat: Text.PlainText
                         id: unreadText
                         anchors.centerIn: parent
                         text: modelData.kind === "bot" ? String(modelData.bot.unread) : ""
@@ -869,6 +968,7 @@ Panel {
 
           // ---- empty states
           Text {
+            textFormat: Text.PlainText
             visible: root.snap && root.bots.length === 0
             width: parent.width
             topPadding: Style.space(10)
@@ -885,6 +985,7 @@ Panel {
             width: parent.width
             height: Style.space(30)
             Text {
+              textFormat: Text.PlainText
               anchors.verticalCenter: parent.verticalCenter
               text: "j/k move · ⏎ open app · g " + root.ordering
                     + " · h hide · r beside logo: " + root.barMetric
