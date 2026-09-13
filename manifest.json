@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "njpatel.omabot",
   "name": "Omabot",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "Neil Patel",
   "license": "Apache-2.0",
   "description": "Your Grok Bot roster in the bar: every bot drawn as its own avatar, with an expression for its state and one keypress to the app.",

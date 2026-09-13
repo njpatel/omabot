@@ -35,6 +35,7 @@ qmllint Widget.qml Avatar.qml     # CHECK THE EXIT CODE; its stderr is easy to l
 omarchy-restart-shell             # reload (never omarchy-refresh-shell)
 bin/omabot-watch --interval 2     # the raw stream, one JSON line per change
 omarchy-shell njpatel.omabot demo # staged roster, again to go back
+python3 -B -m unittest discover -s tests -v # focused avatar-cache regressions
 ```
 
 `demo` is the way to see states you cannot summon: fourteen invented bots
@@ -66,8 +67,8 @@ chasing a bug that is not there.
 **Reading it cheaply**
 
 - Transcripts are large and change rarely, so `working_state()` caches by
-  **mtime**. Avatars are cached the same way, and decoded per `version` so an
-  unchanged picture costs nothing and a changed one writes a new file.
+  **mtime**. Avatar decoding is also cached by blob mtime and cache-directory
+  identity; cached files are checked without following symlinks before reuse.
 - A bot is *working* when its transcript ends on a user message with no
   `send-message` or assistant `message` after it. User-message roles remain
   top-level in 0.47.0. A structured request for input suppresses that working
@@ -76,8 +77,16 @@ chasing a bug that is not there.
 - Avatars arrive as base64 data URLs inside one blob. They are decoded to files
   under `~/.local/state/omarchy/omabot/avatars/`, because QML wants files and a
   200KB string per bot has no business crossing a JSON line every two seconds.
-  Files nobody wears any more are swept, or changing an avatar twice leaves
-  dead ones behind.
+  Version names are restricted to single filenames; PNG/JPEG data URLs are
+  limited to 2 MiB decoded per picture, 256 entries and 16 MiB per avatar blob.
+- Cache directories are opened component by component without following symlinks.
+  New images use unpredictable exclusive temporary files (0600), then atomic
+  replacement relative to the held directory descriptor. The cache is 0700;
+  existing regular images are made 0600. Symlinks, FIFOs and hard-linked cache
+  entries are refused, and rejected avatars fall back to their drawn shape.
+- Cleanup retires only pictures returned by this watcher, after a complete valid
+  update. It leaves unrelated files and files from earlier watcher sessions
+  alone. Malformed updates do not delete the previous picture.
 
 **Current roster fields**
 
@@ -121,8 +130,10 @@ chasing a bug that is not there.
 
 ## State
 
-`~/.local/state/omarchy/omabot/avatars/` — decoded pictures, named by version,
-swept when unworn. Nothing else is kept, and nothing is written to the journal.
+`~/.local/state/omarchy/omabot/avatars/` — decoded pictures, named by validated
+version. The watcher retires its previously used pictures when unworn, but does
+not sweep unknown or earlier-session files. Nothing else is kept, and nothing
+is written to the journal.
 
 ## Conventions
 
