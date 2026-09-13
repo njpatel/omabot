@@ -13,7 +13,7 @@
 
 Your [Grok Bot](https://x.ai/bot) roster in the [Omarchy](https://omarchy.org) bar. Every bot is drawn as itself - the shape and colour it has in the app, or the picture you gave it - wearing the face of whatever it wants from you.
 
-![The panel, greeting you and following the pointer](assets/faces.gif)
+<a href="assets/panel.mp4"><img src="assets/faces.gif" alt="A close-up of the roster greeting you and following the pointer" width="446"></a>
 
 ## Install
 
@@ -30,7 +30,7 @@ Remove with `omarchy plugin remove njpatel.omabot`. It leaves behind only `~/.lo
 
 The Grok Bot mark is always there, dimmed when the app is not running. Beside it are the bots waiting on you, drawn as themselves. Nothing beside the mark means nothing needs you.
 
-![What sits beside the mark](assets/bar.png)
+<a href="assets/assistance-top.mp4"><img src="assets/assistance.gif" alt="The bar makes room, then the waiting bot lands, bounces and wiggles once" width="320"></a>
 
 Bring the pointer near and they look up at you, one after another.
 
@@ -40,6 +40,15 @@ and gives one short wiggle. This follows top, bottom, left and right bars; side
 bars stack the avatars vertically. A bot already visible as working or unread
 lands and wiggles when it needs your input, without opening another slot.
 Ordinary state refreshes do not replay the entrance or wiggle.
+
+Watch the arrival from each edge: [top](assets/assistance-top.mp4) ·
+[bottom](assets/assistance-bottom.mp4) · [left](assets/assistance-left.mp4) ·
+[right](assets/assistance-right.mp4). [Still bar screenshot](assets/bar.png).
+
+These are native 2× Retina captures of the real shell, using invented bots.
+The videos retain 60 fps; the inline GIFs use 24–30 fps. Images display at half
+their pixel width for Retina sharpness. Crops keep the original pixels, not an
+upscaled recording.
 
 Desktop notifications remain Grok Bot's job. Omabot does not send a second set.
 
@@ -53,9 +62,11 @@ Desktop notifications remain Grok Bot's job. Omabot does not send a second set.
 
 Every bot, with its title, its last message, how long ago, and an unread badge. By default the ones waiting on you come first - longest wait at the top, so nobody is buried - then a rule, then everyone else by recency.
 
-![The roster, whoever needs you first](assets/omabot.png)
+<a href="assets/omabot.png"><img src="assets/omabot.png" alt="The complete roster, with the request for assistance shown first" width="446"></a>
 
 The avatars greet you when the panel opens, and their eyes follow the pointer while it is over the list.
+
+[Watch the full panel greeting and pointer-following video](assets/panel.mp4).
 
 | key | |
 |---|---|
