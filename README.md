@@ -119,6 +119,10 @@ older `violet` name and `notificationsEnabled` fallback. Optional fields are
 read defensively. Future app versions are not guaranteed: if an update moves
 things, `bin/omabot-watch` is the file to fix.
 
+## Contributing
+
+See [Working on omabot](docs/DEVELOPING.md) for development notes and [how we review contributions](docs/DEVELOPING.md#how-we-review-contributions).
+
 ## License
 
 Apache-2.0
