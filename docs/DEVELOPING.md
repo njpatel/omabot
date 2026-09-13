@@ -90,8 +90,10 @@ chasing a bug that is not there.
 **Bar arrivals**
 
 - A keyed `ListModel` retains each visible bot's delegate across snapshots and
-  reordering. New slots expand for 220ms before a 420ms edge-relative entrance.
-  An existing bot becoming awaiting replays only the entrance, not the layout.
+  reordering. New slots expand for 220ms, then enter for 280ms with two diminishing
+  rebounds over 490ms. After a 140ms settled pause, an awaiting bot plays the
+  existing one-shot wiggle. An existing bot becoming awaiting replays the landing
+  and wiggle, not the layout. Hover greetings are suppressed during landing.
 - The bar uses a row or column according to its position. The translation
   points inward from top/bottom/left/right without changing avatar geometry.
 - `demoAssistance` removes the invented waiting bot for one second and brings

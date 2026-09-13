@@ -35,10 +35,11 @@ The Grok Bot mark is always there, dimmed when the app is not running. Beside it
 Bring the pointer near and they look up at you, one after another.
 
 When a bot joins the bar, its neighbours make room before it slides in from the
-screen edge and settles. This follows top, bottom, left and right bars; side
+screen edge, bounces twice and settles. A bot asking for assistance then pauses
+and gives one short wiggle. This follows top, bottom, left and right bars; side
 bars stack the avatars vertically. A bot already visible as working or unread
-settles again when it needs your input, without opening another slot. Ordinary
-state refreshes do not replay the entrance.
+lands and wiggles when it needs your input, without opening another slot.
+Ordinary state refreshes do not replay the entrance or wiggle.
 
 Desktop notifications remain Grok Bot's job. Omabot does not send a second set.
 

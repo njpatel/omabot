@@ -549,10 +549,20 @@ Panel {
               NumberAnimation { target: avatarSlot; property: "spaceProgress"; to: 1; duration: 220; easing.type: Easing.OutCubic }
               ScriptAction { script: drop.restart() }
             }
-            ParallelAnimation {
+            SequentialAnimation {
               id: drop
-              NumberAnimation { target: avatarSlot; property: "dropProgress"; from: 0; to: 1; duration: 420; easing.type: Easing.OutBack; easing.overshoot: 0.8 }
-              NumberAnimation { target: avatarSlot; property: "ink"; from: 0; to: 1; duration: 180 }
+              // Hit the resting line, rebound towards the screen edge twice,
+              // then pause on the bar before the one-shot attention wiggle.
+              ParallelAnimation {
+                NumberAnimation { target: avatarSlot; property: "dropProgress"; from: 0; to: 1; duration: 280; easing.type: Easing.InQuad }
+                NumberAnimation { target: avatarSlot; property: "ink"; from: 0; to: 1; duration: 180 }
+              }
+              NumberAnimation { target: avatarSlot; property: "dropProgress"; to: 0.84; duration: 130; easing.type: Easing.OutQuad }
+              NumberAnimation { target: avatarSlot; property: "dropProgress"; to: 1; duration: 150; easing.type: Easing.InQuad }
+              NumberAnimation { target: avatarSlot; property: "dropProgress"; to: 0.945; duration: 100; easing.type: Easing.OutQuad }
+              NumberAnimation { target: avatarSlot; property: "dropProgress"; to: 1; duration: 110; easing.type: Easing.InQuad }
+              PauseAnimation { duration: 140 }
+              ScriptAction { script: { if (avatarSlot.awaiting) barAvatar.play(1) } }
             }
 
             Avatar {
@@ -573,12 +583,12 @@ Panel {
 
               Connections {
                 target: root
-                function onBarGreeted() { greet.restart() }
+                function onBarGreeted() { if (!arrive.running && !drop.running) greet.restart() }
               }
               Timer {
                 id: greet
                 interval: 30 + avatarSlot.index * 90
-                onTriggered: barAvatar.playBold(avatarSlot.index + root.barGreetSeed)
+                onTriggered: if (!arrive.running && !drop.running) barAvatar.playBold(avatarSlot.index + root.barGreetSeed)
               }
             }
           }
