@@ -1,4 +1,4 @@
-![Omabot](assets/title.png)
+<img src="assets/title.png" alt="Omabot" width="932">
 
 <!--
  ▄█████▄    ▄███████████▄    ▄███████    ▄███████▄    ▄█████▄   ███████████
