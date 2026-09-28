@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 
 // A Grok Bot avatar: the bot's own shape and colour, with eyes that sit on a
 // sphere and a face that carries its state.
@@ -20,14 +21,13 @@ Item {
   // bar is a single flat colour, so its eyes have to be holes to read at all -
   // whatever is behind the bar shows through, in any theme.
   // A bot can wear a picture instead of a face. The app gives those rows no
-  // shape and no colour, so the picture is masked to a squircle and the eyes
-  // stay out of the way - it has a face of its own.
+  // shape and no colour, so the picture is masked to a circle, as the app
+  // draws it, and the eyes stay out of the way - it has a face of its own.
+  // It is an Image rather than a canvas drawImage: the canvas shrinks a
+  // 256-512px picture to ~28px with no filtering, which reads as jagged.
   property url image: ""
   readonly property bool wearsImage: String(image) !== ""
-  onImageChanged: {
-    if (wearsImage) canvas.loadImage(image)
-    else canvas.requestPaint()
-  }
+  onImageChanged: canvas.requestPaint()
 
   property bool cutoutEyes: false
   // Drawn as an outline rather than a solid. The bar's other icons are line
@@ -248,7 +248,6 @@ Item {
         angle: root.tilt + root.spin
       }
     ]
-    onImageLoaded: requestPaint()
     onPaint: {
       var ctx = getContext("2d")
       ctx.reset()
@@ -256,16 +255,11 @@ Item {
       ctx.save()
       ctx.translate(x0, y0)
       if (root.wearsImage) {
-        if (isImageLoaded(root.image)) {
-          ctx.save()
-          root.path(ctx, s)
-          ctx.clip()
-          ctx.drawImage(root.image, 0, 0, s, s)
-          ctx.restore()
-        } else {
-          // Not decoded yet: hold the shape rather than flash an empty square.
+        // Not decoded yet: hold a circle rather than flash an empty square.
+        if (picture.status !== Image.Ready) {
           ctx.fillStyle = root.fill
-          root.path(ctx, s)
+          ctx.beginPath()
+          ctx.arc(s / 2, s / 2, s / 2, 0, Math.PI * 2)
           ctx.fill()
         }
         ctx.restore()
@@ -290,6 +284,58 @@ Item {
       }
       root.drawFace(ctx, s)
       ctx.restore()
+    }
+  }
+
+  Item {
+    id: pictureFrame
+    visible: root.wearsImage && picture.status === Image.Ready
+    width: root.u; height: root.u
+    x: (root.width - width) / 2
+    y: (root.height - height) / 2 + root.bounce
+    transform: [
+      Scale {
+        origin.x: root.width / 2 - pictureFrame.x; origin.y: root.height - pictureFrame.y + root.bounce
+        xScale: root.pop * (1 + root.squash); yScale: root.pop * (1 - root.squash * 0.85)
+      },
+      Rotation {
+        origin.x: root.width / 2 - pictureFrame.x; origin.y: root.height * 0.62 - pictureFrame.y + root.bounce
+        angle: root.tilt + root.spin
+      }
+    ]
+
+    Image {
+      id: picture
+      anchors.fill: parent
+      source: root.image
+      // Decode at the pixels it will occupy on this screen, not the file's size.
+      sourceSize.width: Math.ceil(root.u * 2 * Screen.devicePixelRatio)
+      sourceSize.height: Math.ceil(root.u * 2 * Screen.devicePixelRatio)
+      fillMode: Image.PreserveAspectCrop
+      smooth: true
+      mipmap: true
+      asynchronous: true
+      visible: false
+      onStatusChanged: canvas.requestPaint()
+    }
+
+    Rectangle {
+      id: pictureMask
+      anchors.fill: parent
+      radius: width / 2
+      antialiasing: true
+      visible: false
+      layer.enabled: true
+      layer.smooth: true
+    }
+
+    MultiEffect {
+      anchors.fill: parent
+      source: picture
+      maskEnabled: true
+      maskSource: pictureMask
+      maskThresholdMin: 0.5
+      maskSpreadAtMin: 1.0
     }
   }
 
