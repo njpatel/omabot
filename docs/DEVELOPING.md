@@ -60,9 +60,12 @@ chasing a bug that is not there.
   field is read defensively and an unfamiliar shape degrades to an empty roster
   rather than a broken bar. If an app update moves things, `bin/omabot-watch`
   is the one file to fix.
-- **Liveness comes from `sand-session-marker.json`**, not from a process scan:
-  `aliveAtMs` within 120s means running. That is why the bar mark dims without
-  omabot ever looking for a PID.
+- **Liveness comes from a session marker**, not from a process scan: a
+  heartbeat within 120s means running. That is why the bar mark dims without
+  omabot ever looking for a PID. Grok Bot 0.75 writes
+  `dune-reliability/sessions/<id>.running.json` (`heartbeatAtMs`, once a
+  minute) and renames it to `.clean.json` on quit; older builds wrote
+  `sand-session-marker.json` (`aliveAtMs`), which is still read as a fallback.
 
 **Reading it cheaply**
 

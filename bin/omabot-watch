@@ -24,6 +24,8 @@ import time
 STATE = os.path.expanduser("~/.config/Grok Bot")
 PERSIST = os.path.join(STATE, "sand-client-persistence")
 MARKER = os.path.join(STATE, "sand-session-marker.json")
+# Grok Bot 0.75 replaced MARKER with one file per session, heartbeated each minute.
+SESSIONS = os.path.join(STATE, "dune-reliability", "sessions")
 # Where decoded avatar images are kept. Grok Bot stores them as base64 data
 # URLs in one blob; QML wants files, and a 200KB string per bot has no business
 # going through a JSON line every couple of seconds.
@@ -293,21 +295,39 @@ def avatars(index):
         os.close(dirfd)
 
 
-def marker():
+def session_marker():
+    """Newest live session file; a clean quit renames it to .clean.json."""
     try:
-        with open(MARKER) as f:
-            data = json.load(f)
+        running = [e for e in os.scandir(SESSIONS) if e.name.endswith(".running.json")]
+        if not running:
+            return None
+        with open(max(running, key=lambda e: e.stat().st_mtime).path) as f:
+            return object_value(json.load(f))
     except (OSError, ValueError):
-        return {"running": False}
-    data = object_value(data)
-    alive = number_value(data.get("aliveAtMs")) / 1000.0
+        return None
+
+
+def marker():
+    data = session_marker()
+    if data is not None:
+        alive = data.get("heartbeatAtMs")
+        version = object_value(data.get("identity")).get("appVersion")
+        crash_seen = data.get("windowCrashSeen")
+    else:
+        try:
+            with open(MARKER) as f:
+                data = object_value(json.load(f))
+        except (OSError, ValueError):
+            return {"running": False}
+        alive, version, crash_seen = data.get("aliveAtMs"), data.get("appVersion"), data.get("crashSeen")
+    alive = number_value(alive) / 1000.0
     return {
         "running": 0 <= time.time() - alive < 120,
-        "version": data.get("appVersion"),
+        "version": version,
         "pid": data.get("pid"),
         "started_ts": number_value(data.get("startedAtMs")) / 1000.0,
         "alive_ts": alive,
-        "crash_seen": bool(data.get("crashSeen")),
+        "crash_seen": bool(crash_seen),
     }
 
 
@@ -414,6 +434,7 @@ def main():
                                         "ui-agent-refs", "agent-avatars"))
                          or "transcript.replicas." in k)),
             os.path.getmtime(MARKER) if os.path.exists(MARKER) else 0,
+            os.path.getmtime(SESSIONS) if os.path.exists(SESSIONS) else 0,
         )
         now = time.time()
         # Emit on change, and at least once a minute so "app quit" is noticed.
